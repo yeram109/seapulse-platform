@@ -10,8 +10,13 @@ train_*.py(학습+검증)와 달리 이 스크립트는 학습을 하지 않고,
   날씨가 5개 지역 관측소로 세분화된 이후에는 항구별 관측지역(WEATHER_REGION_BY_ID)의
   예보를 사용. 예보 파일(FORECAST_WEATHER)이 있으면 그 값을, 없으면 그 관측지역의
   동일 주차(week_of_year) 과거 평균값을 사용
-- rolling_weight/lag_weight, rolling_price/lag_price는 예측 시작 전까지는 해당 항구의
-  실제 관측값을, 예측이 시작된 이후에는 같은 항구의 이전 주 예측값을 순차적으로 사용
+- [갱신] rolling_weight/lag_weight, rolling_price/lag_price: catch/wholesale 모델이 최근성
+  특징(직전 실측 없이는 의미가 없고, 체이닝할수록 예측 위에 예측이 쌓여 오차가 누적되는 문제가
+  있었음, feat/seasonal-forecast-model 참고)을 더 이상 쓰지 않게 되면서, 이 값들은 모델 입력이
+  아니라 feature_set 테이블 기록용으로만 계속 계산한다(과거엔 실제 관측값, 예측 시작 이후엔
+  이전 스텝 예측값을 순차 대입 — 감사 추적 목적일 뿐 예측 결과에는 영향 없음). 모델은 이제
+  계절(month/week_of_year/season_peak)·날씨·항구만으로 예측하므로, 주차 간 의존성이 없어져
+  FUTURE_WEEKS를 늘려도 체이닝발 오차 누적 없이 안전하다.
 
 기획서 6.8절: 배포용 모델은 held-out 검증셋이 없으므로 mae는 outputs/model_metrics.csv의
 검증용 모델 결과를 참고치로 그대로 사용한다.
@@ -50,7 +55,7 @@ CATCH_OUT = "outputs/catch_predictions_future.csv"
 PRICE_OUT = "outputs/price_predictions_future.csv"
 FEATURE_OUT = "data/processed/feature_set_future.csv"
 
-FUTURE_WEEKS = 8  # 항구별로 마지막 관측 주 다음부터 몇 주를 예측할지
+FUTURE_WEEKS = 52  # 항구별로 마지막 관측 주 다음부터 몇 주를 예측할지 (체이닝 제거로 장기 확장 안전, feat/seasonal-forecast-model)
 REGION_COLS = [f"region_{r}" for r in REGION_IDS]
 CATCH_FEATURES = CATCH_BASE_FEATURES + REGION_COLS
 WHOLESALE_FEATURES = WHOLESALE_BASE_FEATURES + REGION_COLS
