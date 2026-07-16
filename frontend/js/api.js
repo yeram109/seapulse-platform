@@ -70,11 +70,12 @@ export function regionsSync() {
   return regionsCache ?? [];
 }
 
-/** 지역 한 줄 메타. 거래 실적이 없으면 '데이터 준비 중'. */
+/** 지역 한 줄 메타. 거래 실적이 없으면(share가 null) '데이터 준비 중'.
+ * share가 0.0%인 항구는 거래는 있으나 비중이 작을 뿐이라 구분해서 값을 보여준다. */
 export function regionMetaSync(name) {
   const r = regionsSync().find((x) => x.name === name);
   if (!r) return '';
-  if (!r.share) return '데이터 준비 중 · 추후 제공';
+  if (r.share == null) return '데이터 준비 중 · 추후 제공';
   return `금액 ${r.share}% · ${r.price.toLocaleString()}원/kg`;
 }
 

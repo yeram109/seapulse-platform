@@ -42,7 +42,7 @@ function kpisFromPrediction(role, pred, prevPred, nextPred, regionName, regionPr
   const np = nextPred?.predicted_price;
   const nextPriceTile = np
     ? {
-        label: '다음주 예상 가격',
+        label: '차주 예상 가격',
         value: toWon(np.value),
         sub: `신뢰 ${Math.round(np.lower_bound).toLocaleString()}~${Math.round(np.upper_bound).toLocaleString()}`,
         badge: '위판가',
@@ -82,12 +82,14 @@ export function renderRoleHome(role) {
 
     // 날씨는 예측과 별개로 받아서 채운다 (아래 비동기 블록).
 
-    // 명절 알림 (어업인만)
-    const holidayCard = isFisher ? `
-      <div class="alert alert--warn">
-        <div class="alert__head"><span class="alert__title">${icon('warning', 16)} 명절 알림</span>${badge('추석 D-14', 'warn')}</div>
-        <div class="alert__body">명절 직전엔 물량이 몰려 가격이 떨어집니다 (추석 前 평균 −21%). 직후 열흘은 반등했습니다 (설날 +31%).</div>
-      </div>` : '';
+    // 명절 알림 (어업인만) — 실제 명절 날짜 계산 로직이 없어 항상 고정 문구("추석 D-14")가
+    // 뜨는 문제로 임시 비활성화. 날짜 계산 로직이 준비되면 복구.
+    // const holidayCard = isFisher ? `
+    //   <div class="alert alert--warn">
+    //     <div class="alert__head"><span class="alert__title">${icon('warning', 16)} 명절 알림</span>${badge('추석 D-14', 'warn')}</div>
+    //     <div class="alert__body">명절 직전엔 물량이 몰려 가격이 떨어집니다 (추석 前 평균 −21%). 직후 열흘은 반등했습니다 (설날 +31%).</div>
+    //   </div>` : '';
+    const holidayCard = '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
 
