@@ -128,3 +128,24 @@ export function weekLabel(iso) {
   const [, m, d] = iso.split('-');
   return `${Number(m)}/${Number(d)} 주`;
 }
+
+/* ============================ 날짜 ============================ */
+
+/** 오늘이 속한 ISO 주의 월요일. 'YYYY-MM-DD' */
+export function currentWeekStart(d = new Date()) {
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // 일=0 → 6칸 전, 월=1 → 0칸 전
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const day = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** weeks 중 target(YYYY-MM-DD)과 가장 가까운 주차. target이 범위 밖이면 가장 가까운 끝. */
+export function closestWeek(weeks, target) {
+  if (weeks.includes(target)) return target;
+  const t = new Date(target).getTime();
+  return weeks.reduce((best, w) =>
+    Math.abs(new Date(w) - t) < Math.abs(new Date(best) - t) ? w : best
+  );
+}

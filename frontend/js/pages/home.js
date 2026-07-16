@@ -8,7 +8,7 @@ import {
   kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
-import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, toTon, toWon, weekLabel } from '../api.js';
+import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, toTon, toWon, weekLabel, currentWeekStart, closestWeek } from '../api.js';
 
 /** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체. */
 function kpisFromPrediction(role, pred) {
@@ -142,9 +142,9 @@ export function renderRoleHome(role) {
         return;
       }
 
-      // 기본 주차 = 그 항구에서 예측이 있는 가장 최근 주차.
-      // 오늘 날짜로 계산하면 안 된다 (배포 예측 범위가 과거라 항상 빗나감).
-      const week = weeks.includes(state.weekStart) ? state.weekStart : weeks[weeks.length - 1];
+      // 기본 주차 = 오늘이 속한 주(배포 예측 범위가 이제 오늘을 포함하도록 갱신됨).
+      // 범위 밖이면(파이프라인이 한동안 안 돌아 다시 오래돼진 경우) 가장 가까운 주로 대체.
+      const week = weeks.includes(state.weekStart) ? state.weekStart : closestWeek(weeks, currentWeekStart());
       state.weekStart = week;
 
       weekSlot.innerHTML = weeks
