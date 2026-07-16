@@ -1,17 +1,76 @@
 // pages/home.js — 05·06·07 홈 (물류 / 어업인 / 관리자)
 
-import { navigate } from '../router.js';
+import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
-import { kpis, weeklyWeather, scenarioPairs, pendingUsers, dataPipeline } from '../../data/mock.js';
+import { kpis, pendingUsers } from '../../data/mock.js';
 import {
   logoBar, tabBar, roleBadge, badge, weatherCardCompact,
-  kpiGrid, scenarioCard, wire,
+  kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
+import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, regionsSync, toTon, toWon, currentWeekStart, closestWeek } from '../api.js';
+
+/** cur/prev 사이 변화율(%, digits 자리 반올림). prev가 없거나 0이면 null. */
+function pctChange(cur, prev, digits = 0) {
+  if (prev == null || prev === 0) return null;
+  return Number((((cur - prev) / prev) * 100).toFixed(digits));
+}
+
+/** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체.
+ * prevPred: 직전 주(예측 가능한 주차 중 하나 전)의 전체 예측 응답, 없으면 null.
+ * nextPred: 다음 주(예측 가능한 주차 중 하나 뒤)의 전체 예측 응답, 없으면 null.
+ * regionName/regionPrice: GET /regions의 항구별 평균단가(원/kg, 2023~2025 위판 원본 기준). */
+function kpisFromPrediction(role, pred, prevPred, nextPred, regionName, regionPrice) {
+  const c = pred.predicted_catch;
+  const p = pred.predicted_price;
+  const catchPct = pctChange(c.value, prevPred?.predicted_catch.value);
+  const catchSub = catchPct == null
+    ? `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}`
+    : `전주 대비 ${catchPct >= 0 ? '+' : ''}${catchPct}%`;
+  const catchSubKind = catchPct == null ? undefined : (catchPct >= 0 ? 'ok' : 'danger');
+
+  const pricePct = pctChange(p.value, prevPred?.predicted_price.value, 1);
+  const priceWowTile = pricePct == null
+    ? { label: '전주 대비', value: '—', sub: '비교할 이전 주 데이터 없음' }
+    : {
+        label: '전주 대비',
+        value: `${pricePct >= 0 ? '+' : ''}${pricePct}%`,
+        valueKind: pricePct >= 0 ? 'ok' : 'danger',
+        sub: pricePct > 0 ? '상승 추세' : pricePct < 0 ? '하락 추세' : '보합',
+      };
+
+  const np = nextPred?.predicted_price;
+  const nextPriceTile = np
+    ? {
+        label: '다음주 예상 가격',
+        value: toWon(np.value),
+        sub: `신뢰 ${Math.round(np.lower_bound).toLocaleString()}~${Math.round(np.upper_bound).toLocaleString()}`,
+        badge: '위판가',
+      }
+    : { label: '다음주 예상 가격', value: '—', sub: '다음 주 예측 데이터 없음', badge: '위판가' };
+
+  return role === 'fisher'
+    ? [
+        nextPriceTile,
+        priceWowTile,
+        { label: '이번 주 물량', value: pred.scenario.volume_level, sub: `가격 ${pred.scenario.price_level}` },
+        {
+          label: `${regionName} 평균 단가`,
+          value: regionPrice != null ? `${regionPrice.toLocaleString()}원/kg` : '—',
+          sub: '2023~2025',
+        },
+      ]
+    : [
+        { label: '예측 어획량', value: toTon(c.value), sub: catchSub, subKind: catchSubKind },
+        { label: '신뢰구간', value: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}`, sub: '90% 신뢰수준' },
+        { label: '창고 용량', value: `${state.session.warehouseCapacityTon}톤`, sub: '설정에서 변경' },
+        { label: '예상 위판가', value: toWon(p.value), sub: `가격 ${pred.scenario.price_level}` },
+      ];
+}
 
 /* ============================ 05 / 06 물류·어업인 홈 ============================ */
 export function renderRoleHome(role) {
-  return function (root) {
+  return async function (root, token) {
     state.role = role;
     const s = ensureSession();
     const isFisher = role === 'fisher';
@@ -21,13 +80,7 @@ export function renderRoleHome(role) {
       .map((name) => `<span class="chip ${name === s.region ? 'is-active' : ''}" data-region="${name}">${name}</span>`)
       .join('');
 
-    // 날씨: 이번 주(실측) + 다음 주(예측) 2단. 이번 주 상태는 역할별로 다름.
-    const thisWeek = isFisher ? { text: '강풍 · 출항 주의', kind: 'warn' } : { text: '고수온 주의', kind: 'warn' };
-    const weatherGrid = `
-      <div class="wc-grid">
-        ${weatherCardCompact(weeklyWeather[0], { label: '이번 주', statusText: thisWeek.text, statusKind: thisWeek.kind, active: true })}
-        ${weatherCardCompact(weeklyWeather[1], { label: '다음 주', statusText: '조업 양호', statusKind: 'ok' })}
-      </div>`;
+    // 날씨는 예측과 별개로 받아서 채운다 (아래 비동기 블록).
 
     // 명절 알림 (어업인만)
     const holidayCard = isFisher ? `
@@ -37,12 +90,6 @@ export function renderRoleHome(role) {
       </div>` : '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
-    const pair = scenarioPairs[role];
-    const curKey = state.scenarioKey[role];
-    const scnToggle = `
-      <div class="scn-toggle">
-        ${pair.map((p) => `<button class="${p.key === curKey ? 'is-active' : ''}" data-scnkey="${p.key}">${p.label}</button>`).join('')}
-      </div>`;
 
     root.innerHTML = `
       <section class="screen screen--tab">
@@ -68,12 +115,11 @@ export function renderRoleHome(role) {
         <div class="section-head">
           <div>
             <div class="section-title">주간 해양 날씨</div>
-            <div class="section-sub">통영 부이 · 전년 동주 대비</div>
+            <div class="section-sub">${s.region} 부이 · 전년 동주 대비</div>
           </div>
           <span class="section-link" data-nav="/weather">자세히 ›</span>
         </div>
-        ${weatherGrid}
-        <p class="scroll-hint" data-nav="/weather">← 밀어서 4주치 보기 · 자세히 ›</p>
+        <div id="wGrid" class="wc-grid"></div>
 
         ${holidayCard}
 
@@ -83,24 +129,82 @@ export function renderRoleHome(role) {
           <span class="chart-ph__legend">실측 · 예측 · 신뢰구간</span>
         </div>
 
-        ${kpiGrid(kpis[role])}
+        <div id="kpiSlot">${kpiSkeleton()}</div>
 
         <div class="section-title">추천</div>
-        ${scnToggle}
-        <div id="scnCard">${scenarioCard(curKey)}</div>
+        <div id="scnCard">${loadingCard()}</div>
       </section>
       ${tabBar('home')}
     `;
 
-    // 지역 칩 클릭 → 활성 지역 변경
+    // 지역 칩 클릭 → 활성 지역 변경. 주차는 항구마다 다르므로 같이 초기화한다.
     root.querySelectorAll('[data-region]').forEach((el) =>
-      el.addEventListener('click', () => { s.region = el.dataset.region; navigate('/home/' + role); }));
-
-    // 시나리오 토글
-    root.querySelectorAll('[data-scnkey]').forEach((el) =>
-      el.addEventListener('click', () => { state.scenarioKey[role] = el.dataset.scnkey; navigate('/home/' + role); }));
+      el.addEventListener('click', () => {
+        s.region = el.dataset.region;
+        state.weekStart = null;
+        navigate('/home/' + role);
+      }));
 
     wire(root);
+
+    // ── 여기부터 비동기: 위 껍데기는 이미 그려져 있고, 예측만 나중에 채운다 ──
+    const scnSlot = root.querySelector('#scnCard');
+    const kpiSlot = root.querySelector('#kpiSlot');
+
+    try {
+      const regionId = await regionIdOf(s.region);
+      if (isStale(token)) return;   // 그 사이 다른 화면으로 넘어갔으면 중단
+
+      // 날씨는 예측과 독립이라 실패해도 예측은 계속 그린다.
+      fetchWeather(regionId, 2)
+        .then((ws) => {
+          if (isStale(token) || ws.length < 2) return;
+          root.querySelector('#wGrid').innerHTML =
+            weatherCardCompact(ws[0], { label: '이번 주', active: true }) +
+            weatherCardCompact(ws[1], { label: '다음 주' });
+        })
+        .catch(() => {});
+
+      if (regionId == null) {
+        scnSlot.innerHTML = errorCard({ code: 'INVALID_REGION', message: `${s.region}은(는) 예측 대상 항구가 아니에요.` });
+        return;
+      }
+
+      const weeks = await weeksOf(s.region);
+      if (isStale(token)) return;
+
+      if (!weeks.length) {
+        scnSlot.innerHTML = errorCard({ code: 'NO_DEPLOYED_PREDICTION', message: `${s.region}은(는) 아직 예측 데이터가 없어요.` });
+        return;
+      }
+
+      // 기본 주차 = 오늘이 속한 주(배포 예측 범위가 이제 오늘을 포함하도록 갱신됨).
+      // 범위 밖이면(파이프라인이 한동안 안 돌아 다시 오래돼진 경우) 가장 가까운 주로 대체.
+      const week = weeks.includes(state.weekStart) ? state.weekStart : closestWeek(weeks, currentWeekStart());
+      state.weekStart = week;
+
+      // 전주 대비/다음주 예상가 계산용: 이 주 바로 앞/뒤 주차(있으면)도 같이 받는다.
+      const weekIdx = weeks.indexOf(week);
+      const prevWeek = weeks[weekIdx - 1];
+      const nextWeek = weeks[weekIdx + 1];
+      const fetchOrNull = (w) =>
+        w ? fetchPrediction({ regionId, weekStart: w, role, capacityTon: s.warehouseCapacityTon }).catch(() => null) : Promise.resolve(null);
+      const [pred, prevPred, nextPred] = await Promise.all([
+        fetchPrediction({ regionId, weekStart: week, role, capacityTon: s.warehouseCapacityTon }),
+        fetchOrNull(prevWeek),
+        fetchOrNull(nextWeek),
+      ]);
+      if (isStale(token)) return;
+
+      state.lastPrediction = pred;
+      const regionPrice = regionsSync().find((r) => r.name === s.region)?.price ?? null;
+      kpiSlot.innerHTML = kpiGrid(kpisFromPrediction(role, pred, prevPred, nextPred, s.region, regionPrice));
+      scnSlot.innerHTML = scenarioCard(pred);
+      wire(root);   // 새로 그린 "예측 저장" 버튼에 핸들러를 다시 붙인다
+    } catch (err) {
+      if (isStale(token)) return;
+      scnSlot.innerHTML = errorCard(err);
+    }
   };
 }
 
@@ -108,7 +212,7 @@ export const renderHomeLogistics = renderRoleHome('logistics');
 export const renderHomeFisher = renderRoleHome('fisher');
 
 /* ============================ 07 관리자 홈 ============================ */
-export function renderHomeAdmin(root) {
+export async function renderHomeAdmin(root, token) {
   state.role = 'admin';
   const s = ensureSession();
 
@@ -116,12 +220,6 @@ export function renderHomeAdmin(root) {
     <div class="arow">
       <div class="arow__main"><span class="arow__name">${p.name}</span><span class="arow__sub">${p.email}</span></div>
       <div class="arow__right">${roleBadge(p.roleKey)}<button class="btn btn--sm btn--primary" data-toast="${p.name} 님을 승인했어요">승인</button></div>
-    </div>`).join('');
-
-  const pipeline = dataPipeline.map((d) => `
-    <div class="arow">
-      <div class="arow__main"><span class="arow__name">${d.name}</span><span class="arow__sub">${d.count}</span></div>
-      <div class="arow__right">${badge(d.status, d.kind)}</div>
     </div>`).join('');
 
   root.innerHTML = `
@@ -139,7 +237,7 @@ export function renderHomeAdmin(root) {
       <div class="lgroup__box">${approvals}</div>
 
       <div class="section-title" id="pipeline">데이터 파이프라인</div>
-      <div class="lgroup__box">${pipeline}</div>
+      <div class="lgroup__box" id="pipelineBox"><div class="arow"><span class="arow__sub">불러오는 중…</span></div></div>
 
       <button class="btn btn--primary" data-toast="예측 갱신을 시작했어요">예측 갱신 실행</button>
     </section>
@@ -151,5 +249,24 @@ export function renderHomeAdmin(root) {
     const id = state.adminScroll === 'pipeline' ? 'pipeline' : 'approvals';
     state.adminScroll = null;
     requestAnimationFrame(() => root.querySelector('#' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  // 파이프라인은 실제 적재 건수. '정상/미수집' 판정 기준이 백엔드에 없으므로
+  // 상태 배지 대신 최신일을 그대로 보여준다.
+  try {
+    const sources = await fetchPipeline();
+    if (isStale(token)) return;
+    root.querySelector('#pipelineBox').innerHTML = sources.map((d) => `
+      <div class="arow">
+        <div class="arow__main">
+          <span class="arow__name">${d.name}</span>
+          <span class="arow__sub">${d.count.toLocaleString()}건</span>
+        </div>
+        <div class="arow__right">${badge('최신 ' + (d.latest ?? '없음'), 'neutral')}</div>
+      </div>`).join('');
+  } catch (err) {
+    if (isStale(token)) return;
+    root.querySelector('#pipelineBox').innerHTML =
+      `<div class="arow"><span class="arow__sub">${err.message}</span></div>`;
   }
 }

@@ -3,109 +3,35 @@
 //   ERD 필드 이름을 최대한 그대로 써서, 나중에 진짜 DB로 바꾸기 쉽게 한다.
 
 /* ---------------------------------------------------------
-   region — 경남 8개 위판 지역
-   · 5곳(통영·마산·삼천포·남해·거제도)은 실제 금액비중·단가 데이터 보유
-   · 3곳(의창·진해·고성)은 지역은 있으나 예측 데이터 추후 제공 (pending)
---------------------------------------------------------- */
-export const regions = [
-  { name: '통영',   share: 43.7, price: 5269, note: '경남 1위' },
-  { name: '마산',   share: 28.8, price: 4572, note: '' },
-  { name: '삼천포', share: 25.6, price: 4774, note: '' },
-  { name: '남해',   share: 1.0,  price: 3363, note: '' },
-  { name: '거제도', share: 0.8,  price: 2181, note: '' },
-  { name: '의창',   share: null, price: null, pending: true },
-  { name: '진해',   share: null, price: null, pending: true },
-  { name: '고성',   share: null, price: null, pending: true },
-];
+   region / weeklyWeather — 제거됨 (2026-07-16)
 
-// 지역 한 줄 메타 텍스트 (데이터 있으면 비중·단가, 없으면 준비 중)
-export function regionMeta(name) {
-  const r = regions.find((x) => x.name === name);
-  if (!r) return '';
-  return r.pending
-    ? '데이터 준비 중 · 추후 제공'
-    : `금액 ${r.share}% · ${r.price.toLocaleString()}원/kg`;
-}
-
-/* ---------------------------------------------------------
-   weather_raw / predictions — 통영 부이 주간 (2025 vs 전년 동주)
-   type: 실측 = 이번 주, 예측 = 이후
+   항구 목록·금액비중·단가는 GET /regions 로, 주간 날씨는 GET /weather 로
+   대체했다 (js/api.js). 지웠던 mock 의 지역 수치는 DB 계산값과 정확히 일치했지만,
+   날씨는 달랐다 — mock 28주는 수온 24.7/풍속 8.8·전년대비 +3.7/+4.5 였는데
+   실제 관측은 수온 25.7/풍속 3.8·전년대비 +1.6/−4.8 로 풍속은 부호가 반대다.
+   또 mock 이 '의창·진해·고성은 예측 추후 제공'이라 했지만 실제로는 8개 항구
+   모두 8주치 예측이 있다 (물량이 적어 비중이 0.0%로 잡힐 뿐).
 --------------------------------------------------------- */
-export const weeklyWeather = [
-  { week: 28, range: '7/7–7/13',  type: '실측', temp: 24.7, tempDiff: +3.7, wind: 8.8, windDiff: +4.5, status: '고수온·강풍',    kind: 'warn' },
-  { week: 29, range: '7/14–7/20', type: '예측', temp: 24.5, tempDiff: +2.6, wind: 5.2, windDiff: +0.4, status: '조업 양호',      kind: 'ok'   },
-  { week: 30, range: '7/21–7/27', type: '예측', temp: 27.6, tempDiff: +3.0, wind: 4.5, windDiff: +1.4, status: '고수온 경보',    kind: 'warn' },
-  { week: 31, range: '7/28–8/3',  type: '예측', temp: 28.6, tempDiff: +2.8, wind: 4.7, windDiff: -0.4, status: '어획량 감소 예상', kind: 'warn' },
-];
+
+// 수온-가격 상관은 기획서의 분석 결과라 그대로 둔다. 단, 원래 앞에 붙어 있던
+// "4주 평균 수온이 전년 대비 +3.0°C 높습니다"는 실제 관측(+1.6°C)과 달라 제거했다.
 export const weatherInsight =
-  '4주 평균 수온이 전년 대비 +3.0°C 높습니다. 수온은 가격과 강한 음의 상관(r=−0.61, p=0.0012)을 보이므로 하락 압력이 예상됩니다.';
+  '수온은 가격과 강한 음의 상관(r=−0.61, p=0.0012)을 보입니다. 수온이 오르면 가격 하락 압력이 예상됩니다.';
 
 /* ---------------------------------------------------------
-   scenarios + warehouse_view / fisher_view — 4개 구현 시나리오
-   ※ scenario_type(내부코드) 대신 상황설명(공급과잉 등)만 노출
+   시나리오 / 물류·어업인 KPI — 제거됨 (2026-07-16)
+
+   물류·어업인 홈의 시나리오 카드와 KPI는 이제 백엔드 GET /predictions 응답으로
+   그린다 (js/api.js). 여기 있던 더미 시나리오 4개는 실제 DB에 존재하지 않는
+   조합("평년이상_하락" 등 '하락' 시나리오)을 가정하고 있었고, MAE 도 실제 모델
+   값(어획량 ±9.9톤 / 가격 ±1,740원)과 크게 달라서 남겨두면 오해를 준다.
+   신뢰도 %는 백엔드에 없는 값이라 uncertain 배지로 대체했다.
 --------------------------------------------------------- */
-export const scenarios = {
-  'logistics-oversupply': {
-    role: 'logistics', title: '재고 배치 추천',
-    type: '공급과잉', typeKind: 'warn',
-    volume: '평년이상', price: '하락',
-    confidence: 82, mae: '±1.2톤',
-    headline: '냉동 여유 공간 20톤 확보 권장',
-    desc: '전형적 공급과잉입니다. 넉넉한 공간을 준비하고, 초과 시 외부 창고 임시 계약을 미리 검토하세요.',
-  },
-  'logistics-offseason': {
-    role: 'logistics', title: '재고 배치 추천',
-    type: '비수기', typeKind: 'neutral',
-    volume: '평년이하', price: '보합',
-    confidence: 74, mae: '±0.8톤',
-    headline: '최소 공간만 준비하세요',
-    desc: '전형적 비수기입니다. 특별 대응은 필요 없습니다.',
-  },
-  'fisher-pricedrop': {
-    role: 'fisher', title: '판매 타이밍 추천',
-    type: '가격하락', typeKind: 'danger',
-    volume: '평년이상', price: '하락',
-    confidence: 79, mae: '±380원',
-    headline: '⚠️ 지금 판매를 권장해요',
-    desc: '빠른 처분을 권장합니다. 물량이 평년보다 많고(+18%) 수온 상승으로 추가 하락 여지가 있어요. 삼치는 신선도 유지가 짧아 대기 시 손실 위험이 큽니다.',
-  },
-  'fisher-scarcity': {
-    role: 'fisher', title: '판매 타이밍 추천',
-    type: '희소성', typeKind: 'ok',
-    volume: '평년이하', price: '상승',
-    confidence: 71, mae: '±420원',
-    headline: '대기 후 판매가 유리해요',
-    desc: '희소성 프리미엄 구간입니다. 하루이틀 대기하면 더 유리할 수 있어요.',
-  },
-};
-// 홈에서 역할별로 전환 가능한 두 시나리오
-export const scenarioPairs = {
-  logistics: [
-    { key: 'logistics-oversupply', label: '공급과잉' },
-    { key: 'logistics-offseason',  label: '비수기' },
-  ],
-  fisher: [
-    { key: 'fisher-pricedrop', label: '가격하락' },
-    { key: 'fisher-scarcity',  label: '희소성' },
-  ],
-};
 
 /* ---------------------------------------------------------
-   홈 KPI (역할별 2×2)
+   홈 KPI — 관리자만 (물류/어업인은 API 응답으로 대체)
 --------------------------------------------------------- */
 export const kpis = {
-  logistics: [
-    { label: '다음 주 예측 어획량', value: '8.5톤',   sub: '전주 대비 +12%', subOk: true },
-    { label: '신뢰구간',           value: '7~10톤',  sub: '80% 신뢰수준' },
-    { label: '현재 가동률',        value: '72%',     sub: '여유 8.4톤' },
-    { label: '통영 물량 비중',     value: '43.7%',   sub: '경남 1위' },
-  ],
-  fisher: [
-    { label: '내일 예상 가격', value: '4,050원/kg', sub: '신뢰 3,700~4,400', badge: '위판가' },
-    { label: '전일 대비',      value: '−3.2%',      sub: '하락 추세', valueKind: 'danger' },
-    { label: '이번 주 물량',   value: '평년이상',    sub: '+18% 공급과잉' },
-    { label: '통영 평균 단가', value: '5,269원/kg', sub: '2023~2025' },
-  ],
   admin: [
     { label: '전체 사용자',    value: '128명',      sub: '물류42·어민81·관리5' },
     { label: '승인 대기',      value: '3명',        sub: '관리자 신청', valueKind: 'warn' },

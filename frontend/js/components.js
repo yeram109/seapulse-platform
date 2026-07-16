@@ -2,7 +2,8 @@
 
 import { navigate, refresh } from './router.js';
 import { state, startSession } from './state.js';
-import { scenarios, roleMeta, regions, regionMeta } from '../data/mock.js';
+import { roleMeta } from '../data/mock.js';
+import { regionsSync, regionMetaSync } from './api.js';
 import { icon } from './icons.js';
 
 /* ============================ 작은 조각 ============================ */
@@ -59,30 +60,50 @@ export function tabBar(activeKey) {
 }
 
 /* ============================ 날씨 ============================ */
+// 전년 동주 대비. 작년 같은 주 실측이 없으면 서버가 null을 준다.
 function diffTag(diff) {
+  if (diff == null) return '';
   const up = diff >= 0;
   return `<span class="${up ? 'wdiff-up' : 'wdiff-down'}">전년 ${up ? '▲+' : '▼−'}${Math.abs(diff)}</span>`;
 }
 
+// '실측'은 그 주 관측 평균, '예측'은 같은 주차의 과거 평균(발표용 데모 표기 —
+// 실제로는 계절 평균이지 기상 예보가 아니다. weather.py 참고).
+function typeBadge(w) {
+  if (w.type === '실측') {
+    return badge('실측', 'brand');
+  }
+  return badge('예측', 'neutral');
+}
+
+// 조업 상태 배지 — 공식 특보 기준이 아니라 발표용 데모로 정한 임의 임계값.
+// 데이터 분포(수온 5~31℃, 풍속 0.8~11.6m/s) 기준으로, 수온이 높거나 전년보다
+// 많이 오른 주는 고수온 주의, 풍속이 강하거나 전년보다 많이 세진 주는 강풍 주의,
+// 둘 다 아니면 조업 양호로 표시한다.
+function conditionBadge(w) {
+  if (w.water_temp == null || w.wind_speed == null) return '';
+  const hot = w.water_temp >= 26 || (w.water_temp_diff ?? 0) >= 3;
+  const windy = w.wind_speed >= 8 || (w.wind_speed_diff ?? 0) >= 3;
+  if (hot) return `<div class="wc__status wc__status--warn">고수온 주의</div>`;
+  if (windy) return `<div class="wc__status wc__status--warn">강풍 주의</div>`;
+  return `<div class="wc__status wc__status--ok">조업 양호</div>`;
+}
+
 // 상세 화면(08)용 가로형 날씨 카드
-export function weatherCard(w, statusText, statusKind) {
-  const st = statusText || w.status, sk = statusKind || w.kind;
-  const typeBadge = w.type === '실측' ? badge('실측', 'brand') : badge('예측', 'neutral');
+export function weatherCard(w) {
   return `
     <div class="wcard">
-      <div class="wcard__top"><span class="wcard__wk">${w.week}주 · ${w.range}</span>${typeBadge}</div>
+      <div class="wcard__top"><span class="wcard__wk">${w.week_of_year}주 · ${w.range}</span>${typeBadge(w)}</div>
       <div class="wcard__metrics">
-        <span class="wmetric">${icon('thermometer', 15)} 수온 ${w.temp}°C <small>(${diffTag(w.tempDiff)})</small></span>
-        <span class="wmetric">${icon('wind', 15)} 풍속 ${w.wind} m/s <small>(${diffTag(w.windDiff)})</small></span>
+        <span class="wmetric">${icon('thermometer', 15)} 수온 ${w.water_temp}°C <small>${diffTag(w.water_temp_diff)}</small></span>
+        <span class="wmetric">${icon('wind', 15)} 풍속 ${w.wind_speed} m/s <small>${diffTag(w.wind_speed_diff)}</small></span>
       </div>
-      <div>${badge(st, sk)}</div>
+      ${conditionBadge(w)}
     </div>`;
 }
 
 // 홈용 2단 컴팩트 날씨 카드
-export function weatherCardCompact(w, { label, statusText, statusKind, active }) {
-  const st = statusText || w.status, sk = statusKind || w.kind;
-  const typeBadge = w.type === '실측' ? badge('실측', 'brand') : badge('예측', 'neutral');
+export function weatherCardCompact(w, { label, active } = {}) {
   const metric = (ic, name, val, diff) => `
     <div class="wc__metric">
       <span class="wc__ml">${icon(ic, 14)} ${name}</span>
@@ -91,12 +112,12 @@ export function weatherCardCompact(w, { label, statusText, statusKind, active })
   return `
     <div class="wc ${active ? 'is-active' : ''}">
       <div class="wc__head">
-        <div class="wc__when"><b>${label} (${w.week}주)</b><span>${w.range}</span></div>
-        ${typeBadge}
+        <div class="wc__when"><b>${label} (${w.week_of_year}주)</b><span>${w.range}</span></div>
+        ${typeBadge(w)}
       </div>
-      ${metric('thermometer', '수온', w.temp + '°C', w.tempDiff)}
-      ${metric('wind', '풍속', w.wind + ' m/s', w.windDiff)}
-      <div>${badge(st, sk)}</div>
+      ${metric('thermometer', '수온', w.water_temp + '°C', w.water_temp_diff)}
+      ${metric('wind', '풍속', w.wind_speed + ' m/s', w.wind_speed_diff)}
+      ${conditionBadge(w)}
     </div>`;
 }
 
@@ -104,7 +125,7 @@ export function weatherCardCompact(w, { label, statusText, statusKind, active })
 export function kpiGrid(items) {
   const cell = (k) => {
     const vClass = k.valueKind ? `kpi__value kpi__value--${k.valueKind}` : 'kpi__value';
-    const sub = k.sub ? `<span class="kpi__sub ${k.subOk ? 'kpi__sub--ok' : ''}">${k.sub}</span>` : '';
+    const sub = k.sub ? `<span class="kpi__sub${k.subKind ? ` kpi__sub--${k.subKind}` : ''}">${k.sub}</span>` : '';
     const badgeHtml = k.badge ? ` ${badge(k.badge, 'brand')}` : '';
     return `
       <div class="kpi">
@@ -117,32 +138,95 @@ export function kpiGrid(items) {
 }
 
 /* ============================ 시나리오 추천 카드 ============================ */
-function confKindOf(conf) { return conf >= 80 ? 'ok' : conf >= 73 ? 'brand' : 'warn'; }
+// 서버가 주는 headline(warehouse_view.recommended_space / fisher_view.timing_type)을
+// 카드 테두리 색으로 옮기는 표. 서버에 없는 값이 오면 중립으로 떨어진다.
+const HEADLINE_KIND = {
+  분산판매: 'warn',
+  충분한공간: 'warn',
+  여유공간: 'warn',
+  대기: 'ok',
+  평소대로: 'neutral',
+  표준공간: 'neutral',
+};
 
-export function scenarioCard(scnKey) {
-  const s = scenarios[scnKey];
-  const ck = confKindOf(s.confidence);
+/** MAE 는 모델 전체의 평균 오차. 어획량은 kg → 톤, 가격은 원/kg 그대로. */
+function maeText(role, pred) {
+  return role === 'fisher'
+    ? `±${Math.round(pred.predicted_price.mae).toLocaleString()}원/kg`
+    : `±${(pred.predicted_catch.mae / 1000).toFixed(1)}톤`;
+}
+
+/**
+ * 추천 카드. mock 이 아니라 /predictions 응답(pred)을 그대로 받는다.
+ * 신뢰도 %는 백엔드에 없는 값이라 표시하지 않고, uncertain 배지로 대체한다.
+ */
+export function scenarioCard(pred) {
+  const s = pred.scenario;
+  const isFisher = s.role === 'fisher';
+  const kind = HEADLINE_KIND[s.headline] ?? 'neutral';
+  const v = isFisher ? pred.predicted_price : pred.predicted_catch;
+
+  const uncertainRow = v.uncertain
+    ? `<div class="scn__uncertain">
+         ${badge('예측 불확실', 'warn')}
+         <span>신뢰구간이 넓어 참고용으로만 봐주세요</span>
+       </div>`
+    : '';
+
   return `
-    <div class="card scn-card scn-card--${s.typeKind}">
+    <div class="card scn-card scn-card--${kind}">
       <div class="scn">
         <div class="scn__head">
-          <span class="scn__title">${s.title}</span>
-          ${badge(s.type, s.typeKind)}
+          <span class="scn__title">${isFisher ? '판매 타이밍 추천' : '재고 배치 추천'}</span>
+          ${badge(s.headline, kind)}
         </div>
         <div class="scn__cond">
-          ${badge('물량 ' + s.volume, 'outline')} <span>×</span> ${badge('가격 ' + s.price, 'outline')}
+          ${badge('물량 ' + s.volume_level, 'outline')} <span>×</span> ${badge('가격 ' + s.price_level, 'outline')}
         </div>
+        ${uncertainRow}
         <div class="conf">
-          <div class="conf__row"><span class="conf__label">예측 신뢰도</span><span class="conf__val">${s.confidence}%</span></div>
-          <div class="conf__bar"><div class="conf__fill conf__fill--${ck}" style="width:${s.confidence}%"></div></div>
-          <div class="conf__row"><span class="conf__mae">MAE ${s.mae}</span></div>
+          <div class="conf__row"><span class="conf__mae">모델 평균오차 MAE ${maeText(s.role, pred)}</span></div>
         </div>
         <div class="scn__divider"></div>
-        <div class="scn__headline">${s.headline}</div>
-        <div class="scn__desc">${s.desc}</div>
-        <button class="btn btn--scn" data-action="save-prediction" data-scn="${scnKey}">${icon('bookmark', 16)} 예측 저장</button>
+        <div class="scn__desc">${s.text}</div>
+        <button class="btn btn--scn" data-action="save-prediction">${icon('bookmark', 16)} 예측 저장</button>
       </div>
     </div>`;
+}
+
+/* ============================ 로딩 / 에러 ============================ */
+// API 응답을 기다리는 동안, 그리고 실패했을 때 화면에 채울 것.
+
+/** KPI 자리 채움. 실제 값이 오기 전에 mock 숫자를 보여주면 오해를 주므로 빈 칸으로 둔다. */
+export function kpiSkeleton(n = 4) {
+  const cell = `<div class="kpi">
+      <div class="skeleton skeleton--short"></div>
+      <div class="skeleton skeleton--line"></div>
+    </div>`;
+  return `<div class="kpi-grid">${cell.repeat(n)}</div>`;
+}
+
+export function loadingCard(label = '예측을 불러오는 중…') {
+  return `<div class="card scn-card scn-card--neutral"><div class="scn">
+      <div class="skeleton skeleton--line"></div>
+      <div class="skeleton skeleton--line skeleton--short"></div>
+      <div class="scn__desc">${label}</div>
+    </div></div>`;
+}
+
+export function errorCard(err) {
+  const hint =
+    err.code === 'OUT_OF_FORECAST_RANGE' && err.validRange
+      ? `<div class="scn__desc">예측이 있는 기간: ${err.validRange[0]} ~ ${err.validRange[1]}</div>`
+      : '';
+  return `<div class="card scn-card scn-card--danger"><div class="scn">
+      <div class="scn__head">
+        <span class="scn__title">예측을 불러오지 못했어요</span>
+        ${badge('오류', 'danger')}
+      </div>
+      <div class="scn__desc">${err.message}</div>
+      ${hint}
+    </div></div>`;
 }
 
 /* ============================ 토글 ============================ */
@@ -225,18 +309,23 @@ export function openRoleModal() {
 // 지역 추가 모달 — 여러 곳을 추가하고 완료로 닫는다
 export function openRegionModal() {
   const s = state.session;
-  const note = `<p class="sheet-note">＊ 경남 8개 항구 · 통영·마산·삼천포·남해·거제도만 예측 데이터 제공, 의창·진해·고성은 추후 제공 예정입니다.</p>`;
+  // 8개 항구 모두 예측이 있다. 의창·진해·고성은 위판 물량이 적어 금액 비중이
+  // 0.0%로 잡힐 뿐, 예측이 없는 게 아니다.
+  const note = `<p class="sheet-note">＊ 경남 8개 항구 · 물량이 적은 항구는 예측 불확실성이 큽니다.</p>`;
   const render = () => {
-    const avail = regions.filter((r) => !s.regions.includes(r.name));
+    const avail = regionsSync().filter((r) => !s.regions.includes(r.name));
     const rows = avail.length
-      ? avail.map((r) => `
-          <div class="sheet-row ${r.pending ? 'sheet-row--pending' : ''}">
+      ? avail.map((r) => {
+          const noForecast = !r.weeks?.length;
+          return `
+          <div class="sheet-row ${noForecast ? 'sheet-row--pending' : ''}">
             <div class="sheet-row__main">
-              <span class="sheet-row__name">${r.name}${r.pending ? ' ' + badge('준비 중', 'neutral') : ''}</span>
-              <span class="sheet-row__sub">${regionMeta(r.name)}</span>
+              <span class="sheet-row__name">${r.name}${noForecast ? ' ' + badge('예측 없음', 'neutral') : ''}</span>
+              <span class="sheet-row__sub">${regionMetaSync(r.name)}</span>
             </div>
             <button class="btn btn--sm btn--primary" data-add-region="${r.name}">추가</button>
-          </div>`).join('')
+          </div>`;
+        }).join('')
       : `<div class="sheet-empty">${icon('check', 16)} 경남 8개 항구를 모두 추가했어요</div>`;
     return rows + note;
   };
@@ -283,13 +372,24 @@ export function wire(root) {
     el.addEventListener('click', openSpeciesModal));
   root.querySelectorAll('[data-action="save-prediction"]').forEach((el) =>
     el.addEventListener('click', () => {
-      const s = scenarios[el.dataset.scn];
+      // 저장 대상은 지금 화면에 그려져 있는 예측 = home.js 가 넣어둔 lastPrediction
+      const pred = state.lastPrediction;
+      if (!pred) return toast('저장할 예측이 없어요');
+
+      const s = pred.scenario;
+      const isFisher = s.role === 'fisher';
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
       state.session.saved.unshift({
-        date, roleKey: s.role, type: s.type, typeKind: s.typeKind,
-        headline: s.headline.replace('⚠️ ', ''), confidence: s.confidence,
+        date,
+        roleKey: s.role,
+        type: s.headline,
+        typeKind: HEADLINE_KIND[s.headline] ?? 'neutral',
+        headline: s.text,
+        week: pred.week_start,
+        uncertain: (isFisher ? pred.predicted_price : pred.predicted_catch).uncertain,
       });
       toast('예측을 저장했어요 · 설정 › 저장한 예측');
     }));

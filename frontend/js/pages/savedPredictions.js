@@ -14,10 +14,10 @@ export function renderSavedPredictions(root) {
             <span class="saved-card__date">${icon('clock', 14)} ${p.date}</span>
             ${roleBadge(p.roleKey)}
           </div>
-          <div>${badge(p.type, p.typeKind || 'neutral')}</div>
+          <div>${badge(p.type, p.typeKind || 'neutral')} ${p.uncertain ? badge('예측 불확실', 'warn') : ''}</div>
           <div class="saved-card__hl">${p.headline}</div>
           <div class="saved-card__foot">
-            <span class="saved-card__conf">예측 신뢰도 ${p.confidence}%</span>
+            <span class="saved-card__conf">${p.week} 예측</span>
             <button class="btn btn--sm btn--ghost" data-nav="/settings/report">${icon('file', 15)} 리포트 생성</button>
           </div>
         </div>`).join('')

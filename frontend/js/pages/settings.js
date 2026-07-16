@@ -45,6 +45,15 @@ export function renderSettings(root) {
         <div class="lgroup__box">
           ${row('bookmark', '저장한 예측', s.saved.length + '개', '/settings/saved')}
           ${row('file', '리포트', '', '/settings/report')}
+          ${s.roleKey === 'logistics' ? `
+          <div class="lrow lrow--static">
+            <span class="lrow__ico">${icon('box', 18)}</span>
+            <span class="lrow__label">창고 용량</span>
+            <span class="lrow__right">
+              <input id="capInput" class="cap-input" type="number" min="1" step="10"
+                     value="${s.warehouseCapacityTon}" aria-label="창고 용량(톤)" /> 톤
+            </span>
+          </div>` : ''}
         </div>
       </div>
 
@@ -92,6 +101,13 @@ export function renderSettings(root) {
 
   root.querySelectorAll('[data-theme-set]').forEach((el) =>
     el.addEventListener('click', () => { setTheme(el.dataset.themeSet); navigate('/settings'); }));
+
+  // 창고 용량 = /predictions 의 warehouse_capacity_ton. 물류 역할에만 있다.
+  root.querySelector('#capInput')?.addEventListener('change', (e) => {
+    const ton = Number(e.target.value);
+    if (ton > 0) s.warehouseCapacityTon = ton;
+    else e.target.value = s.warehouseCapacityTon;   // 0·음수는 되돌린다
+  });
 
   root.querySelector('#logoutBtn').addEventListener('click', () => { state.session = null; navigate('/login'); });
 
