@@ -1,0 +1,10 @@
+{
+  "name": "sea-pulse",
+  "version": "0.1.0",
+  "description": "어획량·가격 예측 어플 — 순수 HTML/CSS/JS + Node.js 프로토타입",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}

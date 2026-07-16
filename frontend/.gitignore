@@ -1,0 +1,10 @@
+# 로컬 개발/배포 산출물 (커밋 제외)
+cloudflared
+dist/
+node_modules/
+
+# OS / 편집기
+.DS_Store
+*.log
+.vscode/
+.idea/
