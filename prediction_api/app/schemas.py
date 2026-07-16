@@ -61,6 +61,22 @@ class PipelineSource(BaseModel):
     latest: Optional[str]
 
 
+class ModelInfo(BaseModel):
+    """catch_mae는 kg, price_mae는 원/kg. 모델 단위 상수라 주차별로 다르지 않다."""
+
+    model_version: str
+    catch_mae: float
+    price_mae: float
+
+
+class RefreshStatus(BaseModel):
+    state: str  # idle | running | done | failed
+    step: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    message: Optional[str] = None
+
+
 class ValueWithBounds(BaseModel):
     """mae는 모델 전체의 평균절대오차(어획량 kg, 가격 원/kg). 행마다 다른 값이
     아니라 모델 단위 상수라, 예측값이 아니라 '이 모델의 오차 수준' 표시용이다."""

@@ -5,6 +5,8 @@
 //  · species   : 어종 (기본 삼치)
 //  · saved     : 저장한 예측 (처음엔 비어 있음, 내가 저장해야 생김)
 
+import { pendingUsers as seedPendingUsers } from '../data/mock.js';
+
 // 로그인 데모용 기본 페르소나 (가입 안 하고 로그인만 했을 때 채워줌)
 const personas = {
   logistics: { name: '박창고', nickname: '박창고', email: 'park@toy.coop',     org: '통영수협 냉동창고' },
@@ -17,6 +19,14 @@ export const state = {
   session: null,               // 로그인/가입 시 채워지는 사용자 객체
   weekStart: null,             // 보고 있는 예측 주차 (null이면 서버가 준 최근 주차)
   lastPrediction: null,        // 홈이 마지막으로 받은 /predictions 응답 (예측 저장에서 씀)
+
+  // ── 관리자 사용자 관리: 데모 데이터 ──
+  // DB의 user 테이블에는 테스트·시스템 계정 2행뿐이고 승인 대기 사용자는 존재하지
+  // 않는다. 회원가입이 서버에 저장되지 않으므로 승인할 진짜 대상이 없다.
+  // 그래서 mock 목록을 여기 복사해 두고 화면에서만 승인 처리한다 --
+  // 새로고침하면 되돌아간다. 진짜로 만들려면 회원가입 POST + 비밀번호 해시가 먼저다.
+  demoPendingUsers: seedPendingUsers.map((u) => ({ ...u })),
+  demoUserCount: 128,          // mock 값. 승인할 때마다 1씩 늘린다.
 
   // 알림 설정 (13/14) — 초기값: 앞 3개 ON
   notifications: [

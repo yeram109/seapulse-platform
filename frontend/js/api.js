@@ -91,6 +91,25 @@ export async function fetchPipeline() {
   return getJson('/admin/pipeline');
 }
 
+/** 배포 중인 모델의 버전과 MAE */
+export async function fetchModelInfo() {
+  return getJson('/admin/model');
+}
+
+/** 예측 파이프라인 실행 시작. 이미 돌고 있으면 ApiError. */
+export async function startRefresh() {
+  const res = await fetch(`${BASE}/admin/refresh`, { method: 'POST' }).catch(() => null);
+  if (!res) throw new ApiError('NETWORK', '예측 서버에 연결할 수 없어요.');
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError('REFRESH_BUSY', body?.message ?? `갱신 실패 (${res.status})`);
+  return body;
+}
+
+/** 갱신 상태 폴링 (state: idle|running|done|failed) */
+export async function refreshStatus() {
+  return getJson('/admin/refresh');
+}
+
 /* ============================ 예측 ============================ */
 
 /**

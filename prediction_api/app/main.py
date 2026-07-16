@@ -5,13 +5,15 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import queries, weather
+from . import queries, refresh, weather
 from .db import get_conn
 from .schemas import (
     ErrorCode,
+    ModelInfo,
     PipelineSource,
     PredictionResponse,
     PredictionQuery,
+    RefreshStatus,
     Region,
     Role,
     ScenarioResult,
@@ -30,7 +32,7 @@ ALLOWED_ORIGINS = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],  # POST 는 /admin/refresh 하나뿐
     allow_headers=["*"],
 )
 
@@ -97,6 +99,46 @@ def get_admin_pipeline(conn: sqlite3.Connection = Depends(get_conn)):
         PipelineSource(name="해양 날씨 (부이)", count=s["weather"]["n"], latest=s["weather"]["latest"]),
         PipelineSource(name="노량진 소매", count=s["retail"]["n"], latest=s["retail"]["latest"]),
     ]
+
+
+@app.get("/admin/model", response_model=ModelInfo)
+def get_admin_model(conn: sqlite3.Connection = Depends(get_conn)):
+    """배포 중인 모델의 버전과 평균절대오차. 관리자 KPI 카드용."""
+    row = queries.get_model_info(conn)
+    if row is None:
+        raise HTTPException(status_code=404, detail="배포용 예측이 없습니다.")
+    return ModelInfo(
+        model_version=row["model_version"],
+        catch_mae=row["catch_mae"],
+        price_mae=row["price_mae"],
+    )
+
+
+@app.get("/admin/refresh", response_model=RefreshStatus)
+def get_refresh_status():
+    return refresh.status()
+
+
+@app.post("/admin/refresh", response_model=RefreshStatus, status_code=202)
+def post_refresh():
+    """예측 파이프라인을 다시 돌린다 (predict_future -> load_to_db -> generate_scenarios).
+
+    인증이 없으므로 이 API 에 닿을 수 있으면 누구나 DB 를 재생성할 수 있다.
+    로컬 개발용 전제이며, 외부에 노출한다면 관리자 인증을 먼저 붙여야 한다.
+    """
+    if not refresh.db_is_default():
+        return JSONResponse(
+            status_code=409,
+            content={
+                "state": "failed",
+                "message": "SEAPULSE_DB_PATH 가 레포 기본 DB가 아니라 갱신 결과가 반영되지 않습니다.",
+            },
+        )
+
+    started, message = refresh.start()
+    if not started:
+        return JSONResponse(status_code=409, content={**refresh.status(), "message": message})
+    return refresh.status()
 
 
 @app.get(

@@ -66,6 +66,23 @@ def get_region_stats(conn: Connection) -> dict[int, dict]:
     }
 
 
+def get_model_info(conn: Connection) -> Optional[Row]:
+    """배포용 모델의 버전과 MAE. mae는 행마다 같은 모델 단위 상수라 아무 행이나 집어도
+    같지만, 가장 최근 예측 기준으로 뽑는다."""
+    return conn.execute(
+        """
+        SELECT cp.model_version,
+               cp.mae AS catch_mae,
+               pp.mae AS price_mae
+        FROM catch_predictions cp
+        JOIN price_predictions pp ON pp.catch_prediction_id = cp.catch_prediction_id
+        WHERE cp.model_version LIKE '%final'
+        ORDER BY cp.catch_prediction_id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+
 def get_weather_rows(conn: Connection, region_id: int) -> list[Row]:
     return conn.execute(
         """

@@ -2,13 +2,15 @@
 
 import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
-import { kpis, pendingUsers } from '../../data/mock.js';
 import {
   logoBar, tabBar, roleBadge, badge, weatherCardCompact,
-  kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
+  kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, toast, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
-import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, toTon, toWon, weekLabel } from '../api.js';
+import {
+  fetchPrediction, fetchWeather, fetchPipeline, fetchModelInfo,
+  startRefresh, refreshStatus, regionIdOf, weeksOf, toTon, toWon, weekLabel,
+} from '../api.js';
 
 /** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체. */
 function kpisFromPrediction(role, pred) {
@@ -180,11 +182,13 @@ export async function renderHomeAdmin(root, token) {
   state.role = 'admin';
   const s = ensureSession();
 
-  const approvals = pendingUsers.map((p) => `
-    <div class="arow">
-      <div class="arow__main"><span class="arow__name">${p.name}</span><span class="arow__sub">${p.email}</span></div>
-      <div class="arow__right">${roleBadge(p.roleKey)}<button class="btn btn--sm btn--primary" data-toast="${p.name} 님을 승인했어요">승인</button></div>
-    </div>`).join('');
+  const approvals = state.demoPendingUsers.length
+    ? state.demoPendingUsers.map((p) => `
+        <div class="arow">
+          <div class="arow__main"><span class="arow__name">${p.name}</span><span class="arow__sub">${p.email}</span></div>
+          <div class="arow__right">${roleBadge(p.roleKey)}<button class="btn btn--sm btn--primary" data-approve="${p.email}">승인</button></div>
+        </div>`).join('')
+    : `<div class="arow"><span class="arow__sub">승인 대기 중인 사용자가 없어요</span></div>`;
 
   root.innerHTML = `
     <section class="screen screen--tab">
@@ -195,19 +199,35 @@ export async function renderHomeAdmin(root, token) {
         <span class="role-row__name">${s.nickname} 님</span>
       </div>
 
-      ${kpiGrid(kpis.admin)}
+      <div id="kpiSlot">${kpiSkeleton()}</div>
 
       <div class="section-title" id="approvals">승인 대기 사용자</div>
       <div class="lgroup__box">${approvals}</div>
+      <p class="note">＊ 사용자 목록은 데모 데이터입니다. 회원가입이 서버에 저장되지 않아 승인 결과는 새로고침하면 되돌아갑니다.</p>
 
       <div class="section-title" id="pipeline">데이터 파이프라인</div>
       <div class="lgroup__box" id="pipelineBox"><div class="arow"><span class="arow__sub">불러오는 중…</span></div></div>
 
-      <button class="btn btn--primary" data-toast="예측 갱신을 시작했어요">예측 갱신 실행</button>
+      <button class="btn btn--primary" id="refreshBtn">예측 갱신 실행</button>
+      <p class="note" id="refreshNote">예측 파이프라인을 다시 돌립니다 (추론 → DB 적재 → 시나리오 생성). 10초쯤 걸립니다.</p>
     </section>
     ${tabBar('home')}
   `;
   wire(root);
+
+  // 승인: 데모 목록에서 빼고 사용자 수를 늘린다 (서버에는 반영되지 않음)
+  root.querySelectorAll('[data-approve]').forEach((el) =>
+    el.addEventListener('click', () => {
+      const email = el.dataset.approve;
+      const user = state.demoPendingUsers.find((u) => u.email === email);
+      state.demoPendingUsers = state.demoPendingUsers.filter((u) => u.email !== email);
+      state.demoUserCount += 1;
+      toast(`${user?.name ?? ''} 님을 승인했어요`);
+      state.adminScroll = 'approvals';
+      navigate('/home/admin');
+    }));
+
+  root.querySelector('#refreshBtn').addEventListener('click', () => runRefresh(root));
 
   if (state.adminScroll) {
     const id = state.adminScroll === 'pipeline' ? 'pipeline' : 'approvals';
@@ -218,8 +238,9 @@ export async function renderHomeAdmin(root, token) {
   // 파이프라인은 실제 적재 건수. '정상/미수집' 판정 기준이 백엔드에 없으므로
   // 상태 배지 대신 최신일을 그대로 보여준다.
   try {
-    const sources = await fetchPipeline();
+    const [sources, model] = await Promise.all([fetchPipeline(), fetchModelInfo()]);
     if (isStale(token)) return;
+
     root.querySelector('#pipelineBox').innerHTML = sources.map((d) => `
       <div class="arow">
         <div class="arow__main">
@@ -228,9 +249,60 @@ export async function renderHomeAdmin(root, token) {
         </div>
         <div class="arow__right">${badge('최신 ' + (d.latest ?? '없음'), 'neutral')}</div>
       </div>`).join('');
+
+    const wipanLatest = sources.find((d) => d.name.startsWith('위판'))?.latest ?? '없음';
+    root.querySelector('#kpiSlot').innerHTML = kpiGrid([
+      { label: '전체 사용자', value: `${state.demoUserCount}명`, sub: '데모 데이터' },
+      { label: '승인 대기', value: `${state.demoPendingUsers.length}명`, sub: '데모 데이터',
+        valueKind: state.demoPendingUsers.length ? 'warn' : undefined },
+      { label: '데이터 최신일', value: wipanLatest, sub: '위판 기준' },
+      { label: '모델 MAE', value: `±${Math.round(model.price_mae).toLocaleString()}원`,
+        sub: `어획량 ±${(model.catch_mae / 1000).toFixed(1)}톤 · ${model.model_version}` },
+    ]);
   } catch (err) {
     if (isStale(token)) return;
     root.querySelector('#pipelineBox').innerHTML =
       `<div class="arow"><span class="arow__sub">${err.message}</span></div>`;
+    // 스켈레톤을 그대로 두면 영영 로딩 중처럼 보인다. 서버가 필요한 칸은
+    // '—'로, 데모 데이터인 칸은 그대로 채운다.
+    root.querySelector('#kpiSlot').innerHTML = kpiGrid([
+      { label: '전체 사용자', value: `${state.demoUserCount}명`, sub: '데모 데이터' },
+      { label: '승인 대기', value: `${state.demoPendingUsers.length}명`, sub: '데모 데이터' },
+      { label: '데이터 최신일', value: '—', sub: '불러오지 못함' },
+      { label: '모델 MAE', value: '—', sub: '불러오지 못함' },
+    ]);
+  }
+}
+
+/** '예측 갱신 실행' — 파이프라인을 돌리고 끝날 때까지 상태를 폴링한다. */
+async function runRefresh(root) {
+  const btn = root.querySelector('#refreshBtn');
+  const note = root.querySelector('#refreshNote');
+  btn.disabled = true;
+
+  try {
+    await startRefresh();
+    // 서버가 subprocess 3개를 순서대로 돌린다. 끝날 때까지 step 을 보여준다.
+    for (;;) {
+      const st = await refreshStatus();
+      if (st.state === 'running') {
+        note.textContent = `갱신 중… ${st.step ?? ''}`;
+        await new Promise((r) => setTimeout(r, 1200));
+        continue;
+      }
+      if (st.state === 'failed') {
+        note.textContent = st.message ?? '갱신에 실패했어요';
+        toast('예측 갱신 실패');
+      } else {
+        toast('예측 갱신 완료 · 최신 예측이 반영됐어요');
+        navigate('/home/admin');   // 새 MAE·최신일로 다시 그린다
+      }
+      break;
+    }
+  } catch (err) {
+    note.textContent = err.message;
+    toast('예측 갱신을 시작하지 못했어요');
+  } finally {
+    btn.disabled = false;
   }
 }
