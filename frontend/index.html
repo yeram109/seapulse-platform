@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Sea-Pulse · 어획량·가격 예측</title>
+
+    <!-- 새로고침 시 테마 깜빡임 방지: CSS 로드 전에 저장된 테마를 먼저 적용 -->
+    <script>
+      const saved = localStorage.getItem('sea-pulse-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+    </script>
+
+    <!-- 스타일: 토큰(변수) → 전역 → 컴포넌트 순서로 로드 -->
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/global.css" />
+    <link rel="stylesheet" href="/css/components.css" />
+  </head>
+  <body>
+    <!-- 폰 프레임: 390px 모바일 화면을 흉내내는 컨테이너. 화면은 JS가 여기에 그린다. -->
+    <div id="app" class="phone"></div>
+
+    <!-- 진입점 (ES 모듈) -->
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
