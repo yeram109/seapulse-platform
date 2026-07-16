@@ -27,11 +27,38 @@ class PredictionQuery(BaseModel):
 
 class Region(BaseModel):
     """항구 목록. weeks는 배포용(_final) 예측이 존재하는 주차 -- 프론트가 주차 선택
-    UI를 그릴 때 이 목록만 고를 수 있게 한다. 비어 있으면 예측이 없는 항구."""
+    UI를 그릴 때 이 목록만 고를 수 있게 한다. 비어 있으면 예측이 없는 항구.
+
+    share/price는 price_raw 위판 원본에서 계산한 금액비중(%)과 평균단가(원/kg).
+    거래가 없는 항구는 None.
+    """
 
     region_id: int
     name: str
     weeks: list[date]
+    share: Optional[float] = None
+    price: Optional[int] = None
+
+
+class WeatherWeek(BaseModel):
+    """type='실측'은 weather_raw 관측 평균, '평년'은 같은 ISO 주차의 과거 평균
+    (기상 예보가 아니다 -- weather.py 참고). diff는 전년 동주 실측과의 차이."""
+
+    week_start: date
+    week_of_year: int
+    range: str
+    type: str
+    observed_days: int
+    water_temp: Optional[float]
+    wind_speed: Optional[float]
+    water_temp_diff: Optional[float]
+    wind_speed_diff: Optional[float]
+
+
+class PipelineSource(BaseModel):
+    name: str
+    count: int
+    latest: Optional[str]
 
 
 class ValueWithBounds(BaseModel):

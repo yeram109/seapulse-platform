@@ -62,6 +62,35 @@ export async function weeksOf(name) {
   return list.find((r) => r.name === name)?.weeks ?? [];
 }
 
+// 아래 두 함수는 main.js 가 시작 시 fetchRegions() 로 캐시를 채운 뒤에만 값이 있다.
+// 회원가입 드롭다운·지역 모달처럼 렌더가 동기인 곳에서 쓰려고 sync 로 노출한다.
+
+/** 캐시된 항구 목록 (아직 안 받았으면 빈 배열) */
+export function regionsSync() {
+  return regionsCache ?? [];
+}
+
+/** 지역 한 줄 메타. 거래 실적이 없으면 '데이터 준비 중'. */
+export function regionMetaSync(name) {
+  const r = regionsSync().find((x) => x.name === name);
+  if (!r) return '';
+  if (!r.share) return '데이터 준비 중 · 추후 제공';
+  return `금액 ${r.share}% · ${r.price.toLocaleString()}원/kg`;
+}
+
+/* ============================ 주간 날씨 ============================ */
+
+/** 최근 관측 주부터 n주. type: '실측' | '평년'(과거 동일 주차 평균, 예보 아님) */
+export async function fetchWeather(regionId, weeks = 4) {
+  return getJson('/weather', { region_id: regionId, weeks });
+}
+
+/* ============================ 관리자 ============================ */
+
+export async function fetchPipeline() {
+  return getJson('/admin/pipeline');
+}
+
 /* ============================ 예측 ============================ */
 
 /**

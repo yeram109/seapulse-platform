@@ -5,16 +5,18 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import queries
+from . import queries, weather
 from .db import get_conn
 from .schemas import (
     ErrorCode,
+    PipelineSource,
     PredictionResponse,
     PredictionQuery,
     Region,
     Role,
     ScenarioResult,
     ValueWithBounds,
+    WeatherWeek,
 )
 
 app = FastAPI(title="Fisheries Prediction API")
@@ -55,16 +57,45 @@ def _split_scenario_type(scenario_type: str) -> tuple[str, str]:
 
 @app.get("/regions", response_model=list[Region])
 def get_regions(conn: sqlite3.Connection = Depends(get_conn)):
-    """항구 목록 + 배포용 예측이 있는 주차. 프론트가 region_id 매핑과 주차 선택지를
-    하드코딩하지 않도록 서버가 알려준다."""
+    """항구 목록 + 배포용 예측이 있는 주차 + 금액비중/평균단가. 프론트가 region_id
+    매핑과 주차 선택지, 지역 통계를 하드코딩하지 않도록 서버가 알려준다."""
     weeks_by_region = queries.get_forecast_weeks_by_region(conn)
+    stats = queries.get_region_stats(conn)
     return [
         Region(
             region_id=row["region_id"],
             name=row["region_name"],
             weeks=weeks_by_region.get(row["region_id"], []),
+            share=stats.get(row["region_id"], {}).get("share"),
+            price=stats.get(row["region_id"], {}).get("price"),
         )
         for row in queries.get_regions(conn)
+    ]
+
+
+@app.get("/weather", response_model=list[WeatherWeek])
+def get_weather(
+    region_id: int = Query(...),
+    weeks: int = Query(default=4, ge=1, le=12),
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    """최근 관측 주부터 weeks 개의 주간 해양 날씨. 관측이 없는 주는 평년값."""
+    if not queries.region_exists(conn, region_id):
+        return JSONResponse(
+            status_code=400,
+            content={"error": ErrorCode.INVALID_REGION, "message": "존재하지 않는 region_id 입니다."},
+        )
+    return weather.build(queries.get_weather_rows(conn, region_id), weeks)
+
+
+@app.get("/admin/pipeline", response_model=list[PipelineSource])
+def get_admin_pipeline(conn: sqlite3.Connection = Depends(get_conn)):
+    """관리자 홈의 데이터 파이프라인 카드. 원본별 실제 적재 건수와 최신일."""
+    s = queries.get_pipeline_stats(conn)
+    return [
+        PipelineSource(name="위판 (수협)", count=s["wipan"]["n"], latest=s["wipan"]["latest"]),
+        PipelineSource(name="해양 날씨 (부이)", count=s["weather"]["n"], latest=s["weather"]["latest"]),
+        PipelineSource(name="노량진 소매", count=s["retail"]["n"], latest=s["retail"]["latest"]),
     ]
 
 

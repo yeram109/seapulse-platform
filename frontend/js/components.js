@@ -2,7 +2,8 @@
 
 import { navigate, refresh } from './router.js';
 import { state, startSession } from './state.js';
-import { roleMeta, regions, regionMeta } from '../data/mock.js';
+import { roleMeta } from '../data/mock.js';
+import { regionsSync, regionMetaSync } from './api.js';
 import { icon } from './icons.js';
 
 /* ============================ 작은 조각 ============================ */
@@ -59,30 +60,38 @@ export function tabBar(activeKey) {
 }
 
 /* ============================ 날씨 ============================ */
+// 전년 동주 대비. 서버는 실측 주차에만 diff 를 준다 (평년 주차는 null).
 function diffTag(diff) {
+  if (diff == null) return '';
   const up = diff >= 0;
   return `<span class="${up ? 'wdiff-up' : 'wdiff-down'}">전년 ${up ? '▲+' : '▼−'}${Math.abs(diff)}</span>`;
 }
 
+// '실측'은 그 주 관측 평균, '평년'은 같은 주차의 과거 평균이라 예보가 아니다.
+// 배지 문구로 그 차이가 보이게 한다.
+function typeBadge(w) {
+  if (w.type === '실측') {
+    // 진행 중인 주는 아직 7일이 안 찼다 -- 며칠 평균인지 밝힌다.
+    const partial = w.observed_days > 0 && w.observed_days < 7;
+    return badge(partial ? `실측 ${w.observed_days}일` : '실측', 'brand');
+  }
+  return badge('평년', 'neutral');
+}
+
 // 상세 화면(08)용 가로형 날씨 카드
-export function weatherCard(w, statusText, statusKind) {
-  const st = statusText || w.status, sk = statusKind || w.kind;
-  const typeBadge = w.type === '실측' ? badge('실측', 'brand') : badge('예측', 'neutral');
+export function weatherCard(w) {
   return `
     <div class="wcard">
-      <div class="wcard__top"><span class="wcard__wk">${w.week}주 · ${w.range}</span>${typeBadge}</div>
+      <div class="wcard__top"><span class="wcard__wk">${w.week_of_year}주 · ${w.range}</span>${typeBadge(w)}</div>
       <div class="wcard__metrics">
-        <span class="wmetric">${icon('thermometer', 15)} 수온 ${w.temp}°C <small>(${diffTag(w.tempDiff)})</small></span>
-        <span class="wmetric">${icon('wind', 15)} 풍속 ${w.wind} m/s <small>(${diffTag(w.windDiff)})</small></span>
+        <span class="wmetric">${icon('thermometer', 15)} 수온 ${w.water_temp}°C <small>${diffTag(w.water_temp_diff)}</small></span>
+        <span class="wmetric">${icon('wind', 15)} 풍속 ${w.wind_speed} m/s <small>${diffTag(w.wind_speed_diff)}</small></span>
       </div>
-      <div>${badge(st, sk)}</div>
     </div>`;
 }
 
 // 홈용 2단 컴팩트 날씨 카드
-export function weatherCardCompact(w, { label, statusText, statusKind, active }) {
-  const st = statusText || w.status, sk = statusKind || w.kind;
-  const typeBadge = w.type === '실측' ? badge('실측', 'brand') : badge('예측', 'neutral');
+export function weatherCardCompact(w, { label, active } = {}) {
   const metric = (ic, name, val, diff) => `
     <div class="wc__metric">
       <span class="wc__ml">${icon(ic, 14)} ${name}</span>
@@ -91,12 +100,11 @@ export function weatherCardCompact(w, { label, statusText, statusKind, active })
   return `
     <div class="wc ${active ? 'is-active' : ''}">
       <div class="wc__head">
-        <div class="wc__when"><b>${label} (${w.week}주)</b><span>${w.range}</span></div>
-        ${typeBadge}
+        <div class="wc__when"><b>${label} (${w.week_of_year}주)</b><span>${w.range}</span></div>
+        ${typeBadge(w)}
       </div>
-      ${metric('thermometer', '수온', w.temp + '°C', w.tempDiff)}
-      ${metric('wind', '풍속', w.wind + ' m/s', w.windDiff)}
-      <div>${badge(st, sk)}</div>
+      ${metric('thermometer', '수온', w.water_temp + '°C', w.water_temp_diff)}
+      ${metric('wind', '풍속', w.wind_speed + ' m/s', w.wind_speed_diff)}
     </div>`;
 }
 
@@ -288,18 +296,23 @@ export function openRoleModal() {
 // 지역 추가 모달 — 여러 곳을 추가하고 완료로 닫는다
 export function openRegionModal() {
   const s = state.session;
-  const note = `<p class="sheet-note">＊ 경남 8개 항구 · 통영·마산·삼천포·남해·거제도만 예측 데이터 제공, 의창·진해·고성은 추후 제공 예정입니다.</p>`;
+  // 8개 항구 모두 예측이 있다. 의창·진해·고성은 위판 물량이 적어 금액 비중이
+  // 0.0%로 잡힐 뿐, 예측이 없는 게 아니다.
+  const note = `<p class="sheet-note">＊ 경남 8개 항구 · 물량이 적은 항구는 예측 불확실성이 큽니다.</p>`;
   const render = () => {
-    const avail = regions.filter((r) => !s.regions.includes(r.name));
+    const avail = regionsSync().filter((r) => !s.regions.includes(r.name));
     const rows = avail.length
-      ? avail.map((r) => `
-          <div class="sheet-row ${r.pending ? 'sheet-row--pending' : ''}">
+      ? avail.map((r) => {
+          const noForecast = !r.weeks?.length;
+          return `
+          <div class="sheet-row ${noForecast ? 'sheet-row--pending' : ''}">
             <div class="sheet-row__main">
-              <span class="sheet-row__name">${r.name}${r.pending ? ' ' + badge('준비 중', 'neutral') : ''}</span>
-              <span class="sheet-row__sub">${regionMeta(r.name)}</span>
+              <span class="sheet-row__name">${r.name}${noForecast ? ' ' + badge('예측 없음', 'neutral') : ''}</span>
+              <span class="sheet-row__sub">${regionMetaSync(r.name)}</span>
             </div>
             <button class="btn btn--sm btn--primary" data-add-region="${r.name}">추가</button>
-          </div>`).join('')
+          </div>`;
+        }).join('')
       : `<div class="sheet-empty">${icon('check', 16)} 경남 8개 항구를 모두 추가했어요</div>`;
     return rows + note;
   };

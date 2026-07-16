@@ -2,13 +2,13 @@
 
 import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
-import { kpis, weeklyWeather, pendingUsers, dataPipeline } from '../../data/mock.js';
+import { kpis, pendingUsers } from '../../data/mock.js';
 import {
   logoBar, tabBar, roleBadge, badge, weatherCardCompact,
   kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
-import { fetchPrediction, regionIdOf, weeksOf, toTon, toWon, weekLabel } from '../api.js';
+import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, toTon, toWon, weekLabel } from '../api.js';
 
 /** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체. */
 function kpisFromPrediction(role, pred) {
@@ -41,13 +41,7 @@ export function renderRoleHome(role) {
       .map((name) => `<span class="chip ${name === s.region ? 'is-active' : ''}" data-region="${name}">${name}</span>`)
       .join('');
 
-    // 날씨: 이번 주(실측) + 다음 주(예측) 2단. 이번 주 상태는 역할별로 다름.
-    const thisWeek = isFisher ? { text: '강풍 · 출항 주의', kind: 'warn' } : { text: '고수온 주의', kind: 'warn' };
-    const weatherGrid = `
-      <div class="wc-grid">
-        ${weatherCardCompact(weeklyWeather[0], { label: '이번 주', statusText: thisWeek.text, statusKind: thisWeek.kind, active: true })}
-        ${weatherCardCompact(weeklyWeather[1], { label: '다음 주', statusText: '조업 양호', statusKind: 'ok' })}
-      </div>`;
+    // 날씨는 예측과 별개로 받아서 채운다 (아래 비동기 블록).
 
     // 명절 알림 (어업인만)
     const holidayCard = isFisher ? `
@@ -82,11 +76,11 @@ export function renderRoleHome(role) {
         <div class="section-head">
           <div>
             <div class="section-title">주간 해양 날씨</div>
-            <div class="section-sub">통영 부이 · 전년 동주 대비</div>
+            <div class="section-sub">${s.region} 부이 · 전년 동주 대비</div>
           </div>
           <span class="section-link" data-nav="/weather">자세히 ›</span>
         </div>
-        ${weatherGrid}
+        <div id="wGrid" class="wc-grid"></div>
         <p class="scroll-hint" data-nav="/weather">← 밀어서 4주치 보기 · 자세히 ›</p>
 
         ${holidayCard}
@@ -124,6 +118,16 @@ export function renderRoleHome(role) {
     try {
       const regionId = await regionIdOf(s.region);
       if (isStale(token)) return;   // 그 사이 다른 화면으로 넘어갔으면 중단
+
+      // 날씨는 예측과 독립이라 실패해도 예측은 계속 그린다.
+      fetchWeather(regionId, 2)
+        .then((ws) => {
+          if (isStale(token) || ws.length < 2) return;
+          root.querySelector('#wGrid').innerHTML =
+            weatherCardCompact(ws[0], { label: '이번 주', active: true }) +
+            weatherCardCompact(ws[1], { label: '다음 주' });
+        })
+        .catch(() => {});
 
       if (regionId == null) {
         scnSlot.innerHTML = errorCard({ code: 'INVALID_REGION', message: `${s.region}은(는) 예측 대상 항구가 아니에요.` });
@@ -172,7 +176,7 @@ export const renderHomeLogistics = renderRoleHome('logistics');
 export const renderHomeFisher = renderRoleHome('fisher');
 
 /* ============================ 07 관리자 홈 ============================ */
-export function renderHomeAdmin(root) {
+export async function renderHomeAdmin(root, token) {
   state.role = 'admin';
   const s = ensureSession();
 
@@ -180,12 +184,6 @@ export function renderHomeAdmin(root) {
     <div class="arow">
       <div class="arow__main"><span class="arow__name">${p.name}</span><span class="arow__sub">${p.email}</span></div>
       <div class="arow__right">${roleBadge(p.roleKey)}<button class="btn btn--sm btn--primary" data-toast="${p.name} 님을 승인했어요">승인</button></div>
-    </div>`).join('');
-
-  const pipeline = dataPipeline.map((d) => `
-    <div class="arow">
-      <div class="arow__main"><span class="arow__name">${d.name}</span><span class="arow__sub">${d.count}</span></div>
-      <div class="arow__right">${badge(d.status, d.kind)}</div>
     </div>`).join('');
 
   root.innerHTML = `
@@ -203,7 +201,7 @@ export function renderHomeAdmin(root) {
       <div class="lgroup__box">${approvals}</div>
 
       <div class="section-title" id="pipeline">데이터 파이프라인</div>
-      <div class="lgroup__box">${pipeline}</div>
+      <div class="lgroup__box" id="pipelineBox"><div class="arow"><span class="arow__sub">불러오는 중…</span></div></div>
 
       <button class="btn btn--primary" data-toast="예측 갱신을 시작했어요">예측 갱신 실행</button>
     </section>
@@ -215,5 +213,24 @@ export function renderHomeAdmin(root) {
     const id = state.adminScroll === 'pipeline' ? 'pipeline' : 'approvals';
     state.adminScroll = null;
     requestAnimationFrame(() => root.querySelector('#' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  // 파이프라인은 실제 적재 건수. '정상/미수집' 판정 기준이 백엔드에 없으므로
+  // 상태 배지 대신 최신일을 그대로 보여준다.
+  try {
+    const sources = await fetchPipeline();
+    if (isStale(token)) return;
+    root.querySelector('#pipelineBox').innerHTML = sources.map((d) => `
+      <div class="arow">
+        <div class="arow__main">
+          <span class="arow__name">${d.name}</span>
+          <span class="arow__sub">${d.count.toLocaleString()}건</span>
+        </div>
+        <div class="arow__right">${badge('최신 ' + (d.latest ?? '없음'), 'neutral')}</div>
+      </div>`).join('');
+  } catch (err) {
+    if (isStale(token)) return;
+    root.querySelector('#pipelineBox').innerHTML =
+      `<div class="arow"><span class="arow__sub">${err.message}</span></div>`;
   }
 }

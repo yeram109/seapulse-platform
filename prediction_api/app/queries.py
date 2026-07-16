@@ -34,6 +34,69 @@ def get_regions(conn: Connection) -> list[Row]:
     ).fetchall()
 
 
+# 위판(도매) 원본만 집계한다. 노량진(소매)은 지역 비중과 무관.
+WIPAN_SOURCE = "위판"
+
+
+def get_region_stats(conn: Connection) -> dict[int, dict]:
+    """항구별 금액비중(%)과 평균단가(원/kg). price_raw 위판 원본에서 계산한다.
+
+    share = 그 항구 거래금액 / 전체 거래금액. 단가는 금액가중 평균이라
+    단순 AVG(price)가 아니라 SUM(금액)/SUM(물량).
+    """
+    rows = conn.execute(
+        """
+        SELECT region_id,
+               SUM(price * volume) AS amount,
+               SUM(volume) AS volume
+        FROM price_raw
+        WHERE source = ? AND volume > 0
+        GROUP BY region_id
+        """,
+        (WIPAN_SOURCE,),
+    ).fetchall()
+
+    total = sum(r["amount"] for r in rows) or 1
+    return {
+        r["region_id"]: {
+            "share": round(r["amount"] / total * 100, 1),
+            "price": round(r["amount"] / r["volume"]),
+        }
+        for r in rows
+    }
+
+
+def get_weather_rows(conn: Connection, region_id: int) -> list[Row]:
+    return conn.execute(
+        """
+        SELECT observed_date, water_temp, wind_speed
+        FROM weather_raw
+        WHERE region_id = ? AND water_temp IS NOT NULL AND wind_speed IS NOT NULL
+        ORDER BY observed_date
+        """,
+        (region_id,),
+    ).fetchall()
+
+
+def get_pipeline_stats(conn: Connection) -> dict:
+    """관리자 화면 '데이터 파이프라인' 카드용 실제 건수/최신일."""
+    wipan = conn.execute(
+        "SELECT COUNT(*) n, MAX(price_date) latest FROM price_raw WHERE source = ?",
+        (WIPAN_SOURCE,),
+    ).fetchone()
+    retail = conn.execute(
+        "SELECT COUNT(*) n, MAX(price_date) latest FROM price_raw WHERE source LIKE '노량진%'"
+    ).fetchone()
+    weather = conn.execute(
+        "SELECT COUNT(DISTINCT observed_date) n, MAX(observed_date) latest FROM weather_raw"
+    ).fetchone()
+    return {
+        "wipan": dict(wipan),
+        "retail": dict(retail),
+        "weather": dict(weather),
+    }
+
+
 def get_forecast_weeks_by_region(conn: Connection) -> dict[int, list[str]]:
     """항구별로 배포용 예측이 있는 주차 목록. 주차가 항상 7일 간격이라는 보장이
     없으므로 min/max 범위가 아니라 실제 존재하는 주차를 그대로 나열한다."""

@@ -3,42 +3,20 @@
 //   ERD 필드 이름을 최대한 그대로 써서, 나중에 진짜 DB로 바꾸기 쉽게 한다.
 
 /* ---------------------------------------------------------
-   region — 경남 8개 위판 지역
-   · 5곳(통영·마산·삼천포·남해·거제도)은 실제 금액비중·단가 데이터 보유
-   · 3곳(의창·진해·고성)은 지역은 있으나 예측 데이터 추후 제공 (pending)
---------------------------------------------------------- */
-export const regions = [
-  { name: '통영',   share: 43.7, price: 5269, note: '경남 1위' },
-  { name: '마산',   share: 28.8, price: 4572, note: '' },
-  { name: '삼천포', share: 25.6, price: 4774, note: '' },
-  { name: '남해',   share: 1.0,  price: 3363, note: '' },
-  { name: '거제도', share: 0.8,  price: 2181, note: '' },
-  { name: '의창',   share: null, price: null, pending: true },
-  { name: '진해',   share: null, price: null, pending: true },
-  { name: '고성',   share: null, price: null, pending: true },
-];
+   region / weeklyWeather — 제거됨 (2026-07-16)
 
-// 지역 한 줄 메타 텍스트 (데이터 있으면 비중·단가, 없으면 준비 중)
-export function regionMeta(name) {
-  const r = regions.find((x) => x.name === name);
-  if (!r) return '';
-  return r.pending
-    ? '데이터 준비 중 · 추후 제공'
-    : `금액 ${r.share}% · ${r.price.toLocaleString()}원/kg`;
-}
-
-/* ---------------------------------------------------------
-   weather_raw / predictions — 통영 부이 주간 (2025 vs 전년 동주)
-   type: 실측 = 이번 주, 예측 = 이후
+   항구 목록·금액비중·단가는 GET /regions 로, 주간 날씨는 GET /weather 로
+   대체했다 (js/api.js). 지웠던 mock 의 지역 수치는 DB 계산값과 정확히 일치했지만,
+   날씨는 달랐다 — mock 28주는 수온 24.7/풍속 8.8·전년대비 +3.7/+4.5 였는데
+   실제 관측은 수온 25.7/풍속 3.8·전년대비 +1.6/−4.8 로 풍속은 부호가 반대다.
+   또 mock 이 '의창·진해·고성은 예측 추후 제공'이라 했지만 실제로는 8개 항구
+   모두 8주치 예측이 있다 (물량이 적어 비중이 0.0%로 잡힐 뿐).
 --------------------------------------------------------- */
-export const weeklyWeather = [
-  { week: 28, range: '7/7–7/13',  type: '실측', temp: 24.7, tempDiff: +3.7, wind: 8.8, windDiff: +4.5, status: '고수온·강풍',    kind: 'warn' },
-  { week: 29, range: '7/14–7/20', type: '예측', temp: 24.5, tempDiff: +2.6, wind: 5.2, windDiff: +0.4, status: '조업 양호',      kind: 'ok'   },
-  { week: 30, range: '7/21–7/27', type: '예측', temp: 27.6, tempDiff: +3.0, wind: 4.5, windDiff: +1.4, status: '고수온 경보',    kind: 'warn' },
-  { week: 31, range: '7/28–8/3',  type: '예측', temp: 28.6, tempDiff: +2.8, wind: 4.7, windDiff: -0.4, status: '어획량 감소 예상', kind: 'warn' },
-];
+
+// 수온-가격 상관은 기획서의 분석 결과라 그대로 둔다. 단, 원래 앞에 붙어 있던
+// "4주 평균 수온이 전년 대비 +3.0°C 높습니다"는 실제 관측(+1.6°C)과 달라 제거했다.
 export const weatherInsight =
-  '4주 평균 수온이 전년 대비 +3.0°C 높습니다. 수온은 가격과 강한 음의 상관(r=−0.61, p=0.0012)을 보이므로 하락 압력이 예상됩니다.';
+  '수온은 가격과 강한 음의 상관(r=−0.61, p=0.0012)을 보입니다. 수온이 오르면 가격 하락 압력이 예상됩니다.';
 
 /* ---------------------------------------------------------
    시나리오 / 물류·어업인 KPI — 제거됨 (2026-07-16)
