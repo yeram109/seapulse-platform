@@ -48,13 +48,6 @@ BASE_FEATURES = [
     "season_peak",
     "water_temp",
     "wind_speed",
-    "rolling_weight_4w",
-    "rolling_weight_12w",
-    "lag_weight_1w",
-    "lag_weight_2w",
-    "lag_weight_3w",
-    "lag_price_1w",
-    "rolling_price_4w",
     "predicted_catch",
 ]
 TARGET = "price_per_kg"
