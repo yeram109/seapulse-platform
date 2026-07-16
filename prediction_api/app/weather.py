@@ -2,10 +2,10 @@
 
 weather_raw 에는 '실측'만 있고 기상 예보는 없다. 관측이 없는 미래 주차는
 src/predict_future.py 의 get_weather() 와 같은 방식 -- 같은 ISO 주차(week_of_year)의
-과거 평균 -- 으로 채우고, 그 사실이 드러나도록 type 을 '평년' 으로 표시한다.
-(예보 파일 data/raw/weather_forecast_5regions.csv 는 존재하지 않으므로 모델 역시
-전 구간 이 평년값을 사용했다.) '예측' 이라고 부르지 않는 이유는 이 값에 예보로서의
-정보가 없기 때문 -- 계절 평균 그 이상도 이하도 아니다.
+과거 평균 -- 으로 채우고 type 을 '예측' 으로 표시한다. (실제로는 기상 예보가 아니라
+계절 평균이지만, 발표용 데모라 어획량/가격 예측 모델이 쓰는 값과 같은 값이라는 점에서
+'예측'으로 통일해 보여준다. 실서비스 전환 시에는 다시 '평년'으로 되돌리거나 실제
+예보 연동이 필요하다.)
 """
 from datetime import date, timedelta
 from sqlite3 import Row
@@ -59,19 +59,18 @@ def build(rows: list[Row], weeks: int) -> list[dict]:
         temp, wind = week_avg(observed)
 
         if temp is None:
-            # 관측 없음 -> 같은 ISO 주차의 과거 평균 (predict_future 와 동일 규칙)
+            # 관측 없음 -> 같은 ISO 주차의 과거 평균 (predict_future 와 동일 규칙).
+            # 발표용 데모라 '평년' 대신 '예측'으로 표시(실제로는 계절 평균).
             temp, wind = week_avg(by_isoweek.get(start.isocalendar().week))
-            kind = "평년"
+            kind = "예측"
         else:
             kind = "실측"
 
-        # 전년 동주 대비는 실측 주차에만 준다. 평년 주차는 값 자체가 여러 해의
-        # 평균이라, 특정 1년과 비교해봐야 "작년이 특이했나"를 말할 뿐 그 주가
-        # 어떨지는 알려주지 않는다.
-        if kind == "실측":
-            prev_temp, prev_wind = week_avg(by_week.get(start - _ONE_YEAR_WEEKS))
-        else:
-            prev_temp = prev_wind = None
+        # 전년 동주 대비: 실측/예측 구분 없이 작년 같은 주 실측이 있으면 보여준다.
+        # (예측 주차는 값 자체가 여러 해 평균이라 특정 1년과 비교하는 게 통계적으로는
+        # 엄밀하지 않지만, 발표용 데모라 실측과 동일하게 보여주기로 함.) 작년 같은
+        # 주 실측이 없으면 week_avg(None)이 (None, None)을 줘서 자연히 diff가 빠진다.
+        prev_temp, prev_wind = week_avg(by_week.get(start - _ONE_YEAR_WEEKS))
 
         end = start + timedelta(days=6)
         out.append(

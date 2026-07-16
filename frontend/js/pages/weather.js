@@ -33,9 +33,7 @@ export async function renderWeather(root, token) {
     const weeks = await fetchWeather(regionId, 4);
     if (isStale(token)) return;
 
-    slot.innerHTML =
-      weeks.map((w) => weatherCard(w)).join('') +
-      `<p class="note">'평년'은 예보가 아니라 같은 주차의 과거 평균입니다. 예측 모델도 이 값을 사용합니다.</p>`;
+    slot.innerHTML = weeks.map((w) => weatherCard(w)).join('');
   } catch (err) {
     if (isStale(token)) return;
     slot.innerHTML = errorCard(err);

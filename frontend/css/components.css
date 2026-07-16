@@ -203,7 +203,12 @@
 .wc__ml .ic { color: var(--text-muted); }
 .wc__mv { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; }
 .wc__mv small { font-size: 10px; font-weight: 500; }
-.scroll-hint { text-align: center; font-size: 11px; color: var(--text-muted); cursor: pointer; margin-top: -10px; }
+.wc__status {
+  display: inline-flex; align-self: flex-start; align-items: center;
+  font-size: 11px; font-weight: 700; padding: 4px 7px; border-radius: 6px;
+}
+.wc__status--warn { background: var(--warn-bg); color: var(--warn-text); }
+.wc__status--ok   { background: var(--ok-bg);   color: var(--ok-text); }
 
 /* ---- 차트 자리표시 ---- */
 .chart-ph {
@@ -226,8 +231,10 @@
 .kpi__value { font-size: 19px; font-weight: 800; color: var(--text); letter-spacing: -0.4px; line-height: 1.25; }
 .kpi__value--danger { color: var(--danger-text); }
 .kpi__value--warn { color: var(--warn-text); }
+.kpi__value--ok { color: var(--ok-text); }
 .kpi__sub { font-size: 11px; color: var(--text-sub); line-height: 1.45; }
 .kpi__sub--ok { color: var(--ok-text); }
+.kpi__sub--danger { color: var(--danger-text); }
 
 /* ---- 시나리오 추천 카드 ---- */
 /* 카드 테두리를 시나리오 유형색으로 (공급과잉=앰버, 가격하락=빨강 …) */
@@ -272,7 +279,7 @@
 }
 .alert__head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; }
 .alert__title { display: inline-flex; align-items: center; gap: 6px; }
-.alert--warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); }
+/* .alert--warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); } */
 .alert--danger { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); }
 .alert__body { color: var(--text-sub); font-weight: 400; line-height: 1.7; }
 

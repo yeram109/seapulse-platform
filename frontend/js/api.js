@@ -80,7 +80,7 @@ export function regionMetaSync(name) {
 
 /* ============================ 주간 날씨 ============================ */
 
-/** 최근 관측 주부터 n주. type: '실측' | '평년'(과거 동일 주차 평균, 예보 아님) */
+/** 최근 관측 주부터 n주. type: '실측' | '예측'(과거 동일 주차 평균을 예측값으로 표시) */
 export async function fetchWeather(regionId, weeks = 4) {
   return getJson('/weather', { region_id: regionId, weeks });
 }

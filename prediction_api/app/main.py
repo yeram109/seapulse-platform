@@ -79,7 +79,7 @@ def get_weather(
     weeks: int = Query(default=4, ge=1, le=12),
     conn: sqlite3.Connection = Depends(get_conn),
 ):
-    """최근 관측 주부터 weeks 개의 주간 해양 날씨. 관측이 없는 주는 평년값."""
+    """최근 관측 주부터 weeks 개의 주간 해양 날씨. 관측이 없는 주는 예측값(=계절 평균)."""
     if not queries.region_exists(conn, region_id):
         return JSONResponse(
             status_code=400,

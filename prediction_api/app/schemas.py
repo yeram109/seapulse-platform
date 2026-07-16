@@ -41,8 +41,9 @@ class Region(BaseModel):
 
 
 class WeatherWeek(BaseModel):
-    """type='실측'은 weather_raw 관측 평균, '평년'은 같은 ISO 주차의 과거 평균
-    (기상 예보가 아니다 -- weather.py 참고). diff는 전년 동주 실측과의 차이."""
+    """type='실측'은 weather_raw 관측 평균, '예측'은 같은 ISO 주차의 과거 평균
+    (실제 기상 예보는 아니고 계절 평균 — weather.py 참고. 발표용 데모라 '예측'으로
+    표시). diff는 전년 동주 실측과의 차이(예측 주차는 null)."""
 
     week_start: date
     week_of_year: int

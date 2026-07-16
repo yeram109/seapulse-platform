@@ -60,22 +60,33 @@ export function tabBar(activeKey) {
 }
 
 /* ============================ 날씨 ============================ */
-// 전년 동주 대비. 서버는 실측 주차에만 diff 를 준다 (평년 주차는 null).
+// 전년 동주 대비. 작년 같은 주 실측이 없으면 서버가 null을 준다.
 function diffTag(diff) {
   if (diff == null) return '';
   const up = diff >= 0;
   return `<span class="${up ? 'wdiff-up' : 'wdiff-down'}">전년 ${up ? '▲+' : '▼−'}${Math.abs(diff)}</span>`;
 }
 
-// '실측'은 그 주 관측 평균, '평년'은 같은 주차의 과거 평균이라 예보가 아니다.
-// 배지 문구로 그 차이가 보이게 한다.
+// '실측'은 그 주 관측 평균, '예측'은 같은 주차의 과거 평균(발표용 데모 표기 —
+// 실제로는 계절 평균이지 기상 예보가 아니다. weather.py 참고).
 function typeBadge(w) {
   if (w.type === '실측') {
-    // 진행 중인 주는 아직 7일이 안 찼다 -- 며칠 평균인지 밝힌다.
-    const partial = w.observed_days > 0 && w.observed_days < 7;
-    return badge(partial ? `실측 ${w.observed_days}일` : '실측', 'brand');
+    return badge('실측', 'brand');
   }
-  return badge('평년', 'neutral');
+  return badge('예측', 'neutral');
+}
+
+// 조업 상태 배지 — 공식 특보 기준이 아니라 발표용 데모로 정한 임의 임계값.
+// 데이터 분포(수온 5~31℃, 풍속 0.8~11.6m/s) 기준으로, 수온이 높거나 전년보다
+// 많이 오른 주는 고수온 주의, 풍속이 강하거나 전년보다 많이 세진 주는 강풍 주의,
+// 둘 다 아니면 조업 양호로 표시한다.
+function conditionBadge(w) {
+  if (w.water_temp == null || w.wind_speed == null) return '';
+  const hot = w.water_temp >= 26 || (w.water_temp_diff ?? 0) >= 3;
+  const windy = w.wind_speed >= 8 || (w.wind_speed_diff ?? 0) >= 3;
+  if (hot) return `<div class="wc__status wc__status--warn">고수온 주의</div>`;
+  if (windy) return `<div class="wc__status wc__status--warn">강풍 주의</div>`;
+  return `<div class="wc__status wc__status--ok">조업 양호</div>`;
 }
 
 // 상세 화면(08)용 가로형 날씨 카드
@@ -87,6 +98,7 @@ export function weatherCard(w) {
         <span class="wmetric">${icon('thermometer', 15)} 수온 ${w.water_temp}°C <small>${diffTag(w.water_temp_diff)}</small></span>
         <span class="wmetric">${icon('wind', 15)} 풍속 ${w.wind_speed} m/s <small>${diffTag(w.wind_speed_diff)}</small></span>
       </div>
+      ${conditionBadge(w)}
     </div>`;
 }
 
@@ -105,6 +117,7 @@ export function weatherCardCompact(w, { label, active } = {}) {
       </div>
       ${metric('thermometer', '수온', w.water_temp + '°C', w.water_temp_diff)}
       ${metric('wind', '풍속', w.wind_speed + ' m/s', w.wind_speed_diff)}
+      ${conditionBadge(w)}
     </div>`;
 }
 
@@ -112,7 +125,7 @@ export function weatherCardCompact(w, { label, active } = {}) {
 export function kpiGrid(items) {
   const cell = (k) => {
     const vClass = k.valueKind ? `kpi__value kpi__value--${k.valueKind}` : 'kpi__value';
-    const sub = k.sub ? `<span class="kpi__sub ${k.subOk ? 'kpi__sub--ok' : ''}">${k.sub}</span>` : '';
+    const sub = k.sub ? `<span class="kpi__sub${k.subKind ? ` kpi__sub--${k.subKind}` : ''}">${k.sub}</span>` : '';
     const badgeHtml = k.badge ? ` ${badge(k.badge, 'brand')}` : '';
     return `
       <div class="kpi">

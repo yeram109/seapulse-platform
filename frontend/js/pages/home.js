@@ -8,22 +8,61 @@ import {
   kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
-import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, toTon, toWon, weekLabel, currentWeekStart, closestWeek } from '../api.js';
+import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, regionsSync, toTon, toWon, currentWeekStart, closestWeek } from '../api.js';
 
-/** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체. */
-function kpisFromPrediction(role, pred) {
+/** cur/prev 사이 변화율(%, digits 자리 반올림). prev가 없거나 0이면 null. */
+function pctChange(cur, prev, digits = 0) {
+  if (prev == null || prev === 0) return null;
+  return Number((((cur - prev) / prev) * 100).toFixed(digits));
+}
+
+/** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체.
+ * prevPred: 직전 주(예측 가능한 주차 중 하나 전)의 전체 예측 응답, 없으면 null.
+ * nextPred: 다음 주(예측 가능한 주차 중 하나 뒤)의 전체 예측 응답, 없으면 null.
+ * regionName/regionPrice: GET /regions의 항구별 평균단가(원/kg, 2023~2025 위판 원본 기준). */
+function kpisFromPrediction(role, pred, prevPred, nextPred, regionName, regionPrice) {
   const c = pred.predicted_catch;
   const p = pred.predicted_price;
+  const catchPct = pctChange(c.value, prevPred?.predicted_catch.value);
+  const catchSub = catchPct == null
+    ? `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}`
+    : `전주 대비 ${catchPct >= 0 ? '+' : ''}${catchPct}%`;
+  const catchSubKind = catchPct == null ? undefined : (catchPct >= 0 ? 'ok' : 'danger');
+
+  const pricePct = pctChange(p.value, prevPred?.predicted_price.value, 1);
+  const priceWowTile = pricePct == null
+    ? { label: '전주 대비', value: '—', sub: '비교할 이전 주 데이터 없음' }
+    : {
+        label: '전주 대비',
+        value: `${pricePct >= 0 ? '+' : ''}${pricePct}%`,
+        valueKind: pricePct >= 0 ? 'ok' : 'danger',
+        sub: pricePct > 0 ? '상승 추세' : pricePct < 0 ? '하락 추세' : '보합',
+      };
+
+  const np = nextPred?.predicted_price;
+  const nextPriceTile = np
+    ? {
+        label: '다음주 예상 가격',
+        value: toWon(np.value),
+        sub: `신뢰 ${Math.round(np.lower_bound).toLocaleString()}~${Math.round(np.upper_bound).toLocaleString()}`,
+        badge: '위판가',
+      }
+    : { label: '다음주 예상 가격', value: '—', sub: '다음 주 예측 데이터 없음', badge: '위판가' };
+
   return role === 'fisher'
     ? [
-        { label: '예상 위판가', value: toWon(p.value), sub: `신뢰 ${toWon(p.lower_bound)}~${toWon(p.upper_bound)}`, badge: '위판가' },
-        { label: '예측 주차', value: weekLabel(pred.week_start), sub: pred.week_start },
+        nextPriceTile,
+        priceWowTile,
         { label: '이번 주 물량', value: pred.scenario.volume_level, sub: `가격 ${pred.scenario.price_level}` },
-        { label: '예측 어획량', value: toTon(c.value), sub: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}` },
+        {
+          label: `${regionName} 평균 단가`,
+          value: regionPrice != null ? `${regionPrice.toLocaleString()}원/kg` : '—',
+          sub: '2023~2025',
+        },
       ]
     : [
-        { label: '예측 어획량', value: toTon(c.value), sub: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}` },
-        { label: '예측 주차', value: weekLabel(pred.week_start), sub: pred.week_start },
+        { label: '예측 어획량', value: toTon(c.value), sub: catchSub, subKind: catchSubKind },
+        { label: '신뢰구간', value: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}`, sub: '90% 신뢰수준' },
         { label: '창고 용량', value: `${state.session.warehouseCapacityTon}톤`, sub: '설정에서 변경' },
         { label: '예상 위판가', value: toWon(p.value), sub: `가격 ${pred.scenario.price_level}` },
       ];
@@ -81,7 +120,6 @@ export function renderRoleHome(role) {
           <span class="section-link" data-nav="/weather">자세히 ›</span>
         </div>
         <div id="wGrid" class="wc-grid"></div>
-        <p class="scroll-hint" data-nav="/weather">← 밀어서 4주치 보기 · 자세히 ›</p>
 
         ${holidayCard}
 
@@ -91,7 +129,6 @@ export function renderRoleHome(role) {
           <span class="chart-ph__legend">실측 · 예측 · 신뢰구간</span>
         </div>
 
-        <div id="weekChips" class="chips"></div>
         <div id="kpiSlot">${kpiSkeleton()}</div>
 
         <div class="section-title">추천</div>
@@ -113,7 +150,6 @@ export function renderRoleHome(role) {
     // ── 여기부터 비동기: 위 껍데기는 이미 그려져 있고, 예측만 나중에 채운다 ──
     const scnSlot = root.querySelector('#scnCard');
     const kpiSlot = root.querySelector('#kpiSlot');
-    const weekSlot = root.querySelector('#weekChips');
 
     try {
       const regionId = await regionIdOf(s.region);
@@ -147,22 +183,22 @@ export function renderRoleHome(role) {
       const week = weeks.includes(state.weekStart) ? state.weekStart : closestWeek(weeks, currentWeekStart());
       state.weekStart = week;
 
-      weekSlot.innerHTML = weeks
-        .map((w) => `<span class="chip ${w === week ? 'is-active' : ''}" data-week="${w}">${weekLabel(w)}</span>`)
-        .join('');
-      weekSlot.querySelectorAll('[data-week]').forEach((el) =>
-        el.addEventListener('click', () => { state.weekStart = el.dataset.week; navigate('/home/' + role); }));
-
-      const pred = await fetchPrediction({
-        regionId,
-        weekStart: week,
-        role,
-        capacityTon: s.warehouseCapacityTon,
-      });
+      // 전주 대비/다음주 예상가 계산용: 이 주 바로 앞/뒤 주차(있으면)도 같이 받는다.
+      const weekIdx = weeks.indexOf(week);
+      const prevWeek = weeks[weekIdx - 1];
+      const nextWeek = weeks[weekIdx + 1];
+      const fetchOrNull = (w) =>
+        w ? fetchPrediction({ regionId, weekStart: w, role, capacityTon: s.warehouseCapacityTon }).catch(() => null) : Promise.resolve(null);
+      const [pred, prevPred, nextPred] = await Promise.all([
+        fetchPrediction({ regionId, weekStart: week, role, capacityTon: s.warehouseCapacityTon }),
+        fetchOrNull(prevWeek),
+        fetchOrNull(nextWeek),
+      ]);
       if (isStale(token)) return;
 
       state.lastPrediction = pred;
-      kpiSlot.innerHTML = kpiGrid(kpisFromPrediction(role, pred));
+      const regionPrice = regionsSync().find((r) => r.name === s.region)?.price ?? null;
+      kpiSlot.innerHTML = kpiGrid(kpisFromPrediction(role, pred, prevPred, nextPred, s.region, regionPrice));
       scnSlot.innerHTML = scenarioCard(pred);
       wire(root);   // 새로 그린 "예측 저장" 버튼에 핸들러를 다시 붙인다
     } catch (err) {
