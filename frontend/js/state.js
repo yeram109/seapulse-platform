@@ -15,7 +15,8 @@ const personas = {
 export const state = {
   role: 'logistics',           // 현재 역할
   session: null,               // 로그인/가입 시 채워지는 사용자 객체
-  scenarioKey: { logistics: 'logistics-oversupply', fisher: 'fisher-pricedrop' },
+  weekStart: null,             // 보고 있는 예측 주차 (null이면 서버가 준 최근 주차)
+  lastPrediction: null,        // 홈이 마지막으로 받은 /predictions 응답 (예측 저장에서 씀)
 
   // 알림 설정 (13/14) — 초기값: 앞 3개 ON
   notifications: [
@@ -42,6 +43,8 @@ export function startSession(roleKey, overrides = {}) {
     regions: [region],              // 추가된 지역들 (처음엔 가입 때 고른 1곳)
     species: ['삼치'],              // 어종 (기본 삼치)
     saved: [],                      // 저장한 예측 (비어 있음)
+    // 물류 역할의 /predictions 필수 파라미터. 설정 > 창고 용량에서 바꾼다.
+    warehouseCapacityTon: overrides.warehouseCapacityTon ?? 500,
   };
   return state.session;
 }

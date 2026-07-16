@@ -1,17 +1,37 @@
 // pages/home.js — 05·06·07 홈 (물류 / 어업인 / 관리자)
 
-import { navigate } from '../router.js';
+import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
-import { kpis, weeklyWeather, scenarioPairs, pendingUsers, dataPipeline } from '../../data/mock.js';
+import { kpis, weeklyWeather, pendingUsers, dataPipeline } from '../../data/mock.js';
 import {
   logoBar, tabBar, roleBadge, badge, weatherCardCompact,
-  kpiGrid, scenarioCard, wire,
+  kpiGrid, kpiSkeleton, scenarioCard, loadingCard, errorCard, wire,
 } from '../components.js';
 import { icon } from '../icons.js';
+import { fetchPrediction, regionIdOf, weeksOf, toTon, toWon, weekLabel } from '../api.js';
+
+/** 예측값으로 KPI 2×2를 만든다. mock 의 고정 문자열을 대체. */
+function kpisFromPrediction(role, pred) {
+  const c = pred.predicted_catch;
+  const p = pred.predicted_price;
+  return role === 'fisher'
+    ? [
+        { label: '예상 위판가', value: toWon(p.value), sub: `신뢰 ${toWon(p.lower_bound)}~${toWon(p.upper_bound)}`, badge: '위판가' },
+        { label: '예측 주차', value: weekLabel(pred.week_start), sub: pred.week_start },
+        { label: '이번 주 물량', value: pred.scenario.volume_level, sub: `가격 ${pred.scenario.price_level}` },
+        { label: '예측 어획량', value: toTon(c.value), sub: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}` },
+      ]
+    : [
+        { label: '예측 어획량', value: toTon(c.value), sub: `${toTon(c.lower_bound)}~${toTon(c.upper_bound)}` },
+        { label: '예측 주차', value: weekLabel(pred.week_start), sub: pred.week_start },
+        { label: '창고 용량', value: `${state.session.warehouseCapacityTon}톤`, sub: '설정에서 변경' },
+        { label: '예상 위판가', value: toWon(p.value), sub: `가격 ${pred.scenario.price_level}` },
+      ];
+}
 
 /* ============================ 05 / 06 물류·어업인 홈 ============================ */
 export function renderRoleHome(role) {
-  return function (root) {
+  return async function (root, token) {
     state.role = role;
     const s = ensureSession();
     const isFisher = role === 'fisher';
@@ -37,12 +57,6 @@ export function renderRoleHome(role) {
       </div>` : '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
-    const pair = scenarioPairs[role];
-    const curKey = state.scenarioKey[role];
-    const scnToggle = `
-      <div class="scn-toggle">
-        ${pair.map((p) => `<button class="${p.key === curKey ? 'is-active' : ''}" data-scnkey="${p.key}">${p.label}</button>`).join('')}
-      </div>`;
 
     root.innerHTML = `
       <section class="screen screen--tab">
@@ -83,24 +97,74 @@ export function renderRoleHome(role) {
           <span class="chart-ph__legend">실측 · 예측 · 신뢰구간</span>
         </div>
 
-        ${kpiGrid(kpis[role])}
+        <div id="weekChips" class="chips"></div>
+        <div id="kpiSlot">${kpiSkeleton()}</div>
 
         <div class="section-title">추천</div>
-        ${scnToggle}
-        <div id="scnCard">${scenarioCard(curKey)}</div>
+        <div id="scnCard">${loadingCard()}</div>
       </section>
       ${tabBar('home')}
     `;
 
-    // 지역 칩 클릭 → 활성 지역 변경
+    // 지역 칩 클릭 → 활성 지역 변경. 주차는 항구마다 다르므로 같이 초기화한다.
     root.querySelectorAll('[data-region]').forEach((el) =>
-      el.addEventListener('click', () => { s.region = el.dataset.region; navigate('/home/' + role); }));
-
-    // 시나리오 토글
-    root.querySelectorAll('[data-scnkey]').forEach((el) =>
-      el.addEventListener('click', () => { state.scenarioKey[role] = el.dataset.scnkey; navigate('/home/' + role); }));
+      el.addEventListener('click', () => {
+        s.region = el.dataset.region;
+        state.weekStart = null;
+        navigate('/home/' + role);
+      }));
 
     wire(root);
+
+    // ── 여기부터 비동기: 위 껍데기는 이미 그려져 있고, 예측만 나중에 채운다 ──
+    const scnSlot = root.querySelector('#scnCard');
+    const kpiSlot = root.querySelector('#kpiSlot');
+    const weekSlot = root.querySelector('#weekChips');
+
+    try {
+      const regionId = await regionIdOf(s.region);
+      if (isStale(token)) return;   // 그 사이 다른 화면으로 넘어갔으면 중단
+
+      if (regionId == null) {
+        scnSlot.innerHTML = errorCard({ code: 'INVALID_REGION', message: `${s.region}은(는) 예측 대상 항구가 아니에요.` });
+        return;
+      }
+
+      const weeks = await weeksOf(s.region);
+      if (isStale(token)) return;
+
+      if (!weeks.length) {
+        scnSlot.innerHTML = errorCard({ code: 'NO_DEPLOYED_PREDICTION', message: `${s.region}은(는) 아직 예측 데이터가 없어요.` });
+        return;
+      }
+
+      // 기본 주차 = 그 항구에서 예측이 있는 가장 최근 주차.
+      // 오늘 날짜로 계산하면 안 된다 (배포 예측 범위가 과거라 항상 빗나감).
+      const week = weeks.includes(state.weekStart) ? state.weekStart : weeks[weeks.length - 1];
+      state.weekStart = week;
+
+      weekSlot.innerHTML = weeks
+        .map((w) => `<span class="chip ${w === week ? 'is-active' : ''}" data-week="${w}">${weekLabel(w)}</span>`)
+        .join('');
+      weekSlot.querySelectorAll('[data-week]').forEach((el) =>
+        el.addEventListener('click', () => { state.weekStart = el.dataset.week; navigate('/home/' + role); }));
+
+      const pred = await fetchPrediction({
+        regionId,
+        weekStart: week,
+        role,
+        capacityTon: s.warehouseCapacityTon,
+      });
+      if (isStale(token)) return;
+
+      state.lastPrediction = pred;
+      kpiSlot.innerHTML = kpiGrid(kpisFromPrediction(role, pred));
+      scnSlot.innerHTML = scenarioCard(pred);
+      wire(root);   // 새로 그린 "예측 저장" 버튼에 핸들러를 다시 붙인다
+    } catch (err) {
+      if (isStale(token)) return;
+      scnSlot.innerHTML = errorCard(err);
+    }
   };
 }
 

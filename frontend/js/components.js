@@ -2,7 +2,7 @@
 
 import { navigate, refresh } from './router.js';
 import { state, startSession } from './state.js';
-import { scenarios, roleMeta, regions, regionMeta } from '../data/mock.js';
+import { roleMeta, regions, regionMeta } from '../data/mock.js';
 import { icon } from './icons.js';
 
 /* ============================ 작은 조각 ============================ */
@@ -117,32 +117,95 @@ export function kpiGrid(items) {
 }
 
 /* ============================ 시나리오 추천 카드 ============================ */
-function confKindOf(conf) { return conf >= 80 ? 'ok' : conf >= 73 ? 'brand' : 'warn'; }
+// 서버가 주는 headline(warehouse_view.recommended_space / fisher_view.timing_type)을
+// 카드 테두리 색으로 옮기는 표. 서버에 없는 값이 오면 중립으로 떨어진다.
+const HEADLINE_KIND = {
+  분산판매: 'warn',
+  충분한공간: 'warn',
+  여유공간: 'warn',
+  대기: 'ok',
+  평소대로: 'neutral',
+  표준공간: 'neutral',
+};
 
-export function scenarioCard(scnKey) {
-  const s = scenarios[scnKey];
-  const ck = confKindOf(s.confidence);
+/** MAE 는 모델 전체의 평균 오차. 어획량은 kg → 톤, 가격은 원/kg 그대로. */
+function maeText(role, pred) {
+  return role === 'fisher'
+    ? `±${Math.round(pred.predicted_price.mae).toLocaleString()}원/kg`
+    : `±${(pred.predicted_catch.mae / 1000).toFixed(1)}톤`;
+}
+
+/**
+ * 추천 카드. mock 이 아니라 /predictions 응답(pred)을 그대로 받는다.
+ * 신뢰도 %는 백엔드에 없는 값이라 표시하지 않고, uncertain 배지로 대체한다.
+ */
+export function scenarioCard(pred) {
+  const s = pred.scenario;
+  const isFisher = s.role === 'fisher';
+  const kind = HEADLINE_KIND[s.headline] ?? 'neutral';
+  const v = isFisher ? pred.predicted_price : pred.predicted_catch;
+
+  const uncertainRow = v.uncertain
+    ? `<div class="scn__uncertain">
+         ${badge('예측 불확실', 'warn')}
+         <span>신뢰구간이 넓어 참고용으로만 봐주세요</span>
+       </div>`
+    : '';
+
   return `
-    <div class="card scn-card scn-card--${s.typeKind}">
+    <div class="card scn-card scn-card--${kind}">
       <div class="scn">
         <div class="scn__head">
-          <span class="scn__title">${s.title}</span>
-          ${badge(s.type, s.typeKind)}
+          <span class="scn__title">${isFisher ? '판매 타이밍 추천' : '재고 배치 추천'}</span>
+          ${badge(s.headline, kind)}
         </div>
         <div class="scn__cond">
-          ${badge('물량 ' + s.volume, 'outline')} <span>×</span> ${badge('가격 ' + s.price, 'outline')}
+          ${badge('물량 ' + s.volume_level, 'outline')} <span>×</span> ${badge('가격 ' + s.price_level, 'outline')}
         </div>
+        ${uncertainRow}
         <div class="conf">
-          <div class="conf__row"><span class="conf__label">예측 신뢰도</span><span class="conf__val">${s.confidence}%</span></div>
-          <div class="conf__bar"><div class="conf__fill conf__fill--${ck}" style="width:${s.confidence}%"></div></div>
-          <div class="conf__row"><span class="conf__mae">MAE ${s.mae}</span></div>
+          <div class="conf__row"><span class="conf__mae">모델 평균오차 MAE ${maeText(s.role, pred)}</span></div>
         </div>
         <div class="scn__divider"></div>
-        <div class="scn__headline">${s.headline}</div>
-        <div class="scn__desc">${s.desc}</div>
-        <button class="btn btn--scn" data-action="save-prediction" data-scn="${scnKey}">${icon('bookmark', 16)} 예측 저장</button>
+        <div class="scn__desc">${s.text}</div>
+        <button class="btn btn--scn" data-action="save-prediction">${icon('bookmark', 16)} 예측 저장</button>
       </div>
     </div>`;
+}
+
+/* ============================ 로딩 / 에러 ============================ */
+// API 응답을 기다리는 동안, 그리고 실패했을 때 화면에 채울 것.
+
+/** KPI 자리 채움. 실제 값이 오기 전에 mock 숫자를 보여주면 오해를 주므로 빈 칸으로 둔다. */
+export function kpiSkeleton(n = 4) {
+  const cell = `<div class="kpi">
+      <div class="skeleton skeleton--short"></div>
+      <div class="skeleton skeleton--line"></div>
+    </div>`;
+  return `<div class="kpi-grid">${cell.repeat(n)}</div>`;
+}
+
+export function loadingCard(label = '예측을 불러오는 중…') {
+  return `<div class="card scn-card scn-card--neutral"><div class="scn">
+      <div class="skeleton skeleton--line"></div>
+      <div class="skeleton skeleton--line skeleton--short"></div>
+      <div class="scn__desc">${label}</div>
+    </div></div>`;
+}
+
+export function errorCard(err) {
+  const hint =
+    err.code === 'OUT_OF_FORECAST_RANGE' && err.validRange
+      ? `<div class="scn__desc">예측이 있는 기간: ${err.validRange[0]} ~ ${err.validRange[1]}</div>`
+      : '';
+  return `<div class="card scn-card scn-card--danger"><div class="scn">
+      <div class="scn__head">
+        <span class="scn__title">예측을 불러오지 못했어요</span>
+        ${badge('오류', 'danger')}
+      </div>
+      <div class="scn__desc">${err.message}</div>
+      ${hint}
+    </div></div>`;
 }
 
 /* ============================ 토글 ============================ */
@@ -283,13 +346,24 @@ export function wire(root) {
     el.addEventListener('click', openSpeciesModal));
   root.querySelectorAll('[data-action="save-prediction"]').forEach((el) =>
     el.addEventListener('click', () => {
-      const s = scenarios[el.dataset.scn];
+      // 저장 대상은 지금 화면에 그려져 있는 예측 = home.js 가 넣어둔 lastPrediction
+      const pred = state.lastPrediction;
+      if (!pred) return toast('저장할 예측이 없어요');
+
+      const s = pred.scenario;
+      const isFisher = s.role === 'fisher';
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
       state.session.saved.unshift({
-        date, roleKey: s.role, type: s.type, typeKind: s.typeKind,
-        headline: s.headline.replace('⚠️ ', ''), confidence: s.confidence,
+        date,
+        roleKey: s.role,
+        type: s.headline,
+        typeKind: HEADLINE_KIND[s.headline] ?? 'neutral',
+        headline: s.text,
+        week: pred.week_start,
+        uncertain: (isFisher ? pred.predicted_price : pred.predicted_catch).uncertain,
       });
       toast('예측을 저장했어요 · 설정 › 저장한 예측');
     }));

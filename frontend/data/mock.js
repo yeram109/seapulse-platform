@@ -41,71 +41,19 @@ export const weatherInsight =
   '4주 평균 수온이 전년 대비 +3.0°C 높습니다. 수온은 가격과 강한 음의 상관(r=−0.61, p=0.0012)을 보이므로 하락 압력이 예상됩니다.';
 
 /* ---------------------------------------------------------
-   scenarios + warehouse_view / fisher_view — 4개 구현 시나리오
-   ※ scenario_type(내부코드) 대신 상황설명(공급과잉 등)만 노출
+   시나리오 / 물류·어업인 KPI — 제거됨 (2026-07-16)
+
+   물류·어업인 홈의 시나리오 카드와 KPI는 이제 백엔드 GET /predictions 응답으로
+   그린다 (js/api.js). 여기 있던 더미 시나리오 4개는 실제 DB에 존재하지 않는
+   조합("평년이상_하락" 등 '하락' 시나리오)을 가정하고 있었고, MAE 도 실제 모델
+   값(어획량 ±9.9톤 / 가격 ±1,740원)과 크게 달라서 남겨두면 오해를 준다.
+   신뢰도 %는 백엔드에 없는 값이라 uncertain 배지로 대체했다.
 --------------------------------------------------------- */
-export const scenarios = {
-  'logistics-oversupply': {
-    role: 'logistics', title: '재고 배치 추천',
-    type: '공급과잉', typeKind: 'warn',
-    volume: '평년이상', price: '하락',
-    confidence: 82, mae: '±1.2톤',
-    headline: '냉동 여유 공간 20톤 확보 권장',
-    desc: '전형적 공급과잉입니다. 넉넉한 공간을 준비하고, 초과 시 외부 창고 임시 계약을 미리 검토하세요.',
-  },
-  'logistics-offseason': {
-    role: 'logistics', title: '재고 배치 추천',
-    type: '비수기', typeKind: 'neutral',
-    volume: '평년이하', price: '보합',
-    confidence: 74, mae: '±0.8톤',
-    headline: '최소 공간만 준비하세요',
-    desc: '전형적 비수기입니다. 특별 대응은 필요 없습니다.',
-  },
-  'fisher-pricedrop': {
-    role: 'fisher', title: '판매 타이밍 추천',
-    type: '가격하락', typeKind: 'danger',
-    volume: '평년이상', price: '하락',
-    confidence: 79, mae: '±380원',
-    headline: '⚠️ 지금 판매를 권장해요',
-    desc: '빠른 처분을 권장합니다. 물량이 평년보다 많고(+18%) 수온 상승으로 추가 하락 여지가 있어요. 삼치는 신선도 유지가 짧아 대기 시 손실 위험이 큽니다.',
-  },
-  'fisher-scarcity': {
-    role: 'fisher', title: '판매 타이밍 추천',
-    type: '희소성', typeKind: 'ok',
-    volume: '평년이하', price: '상승',
-    confidence: 71, mae: '±420원',
-    headline: '대기 후 판매가 유리해요',
-    desc: '희소성 프리미엄 구간입니다. 하루이틀 대기하면 더 유리할 수 있어요.',
-  },
-};
-// 홈에서 역할별로 전환 가능한 두 시나리오
-export const scenarioPairs = {
-  logistics: [
-    { key: 'logistics-oversupply', label: '공급과잉' },
-    { key: 'logistics-offseason',  label: '비수기' },
-  ],
-  fisher: [
-    { key: 'fisher-pricedrop', label: '가격하락' },
-    { key: 'fisher-scarcity',  label: '희소성' },
-  ],
-};
 
 /* ---------------------------------------------------------
-   홈 KPI (역할별 2×2)
+   홈 KPI — 관리자만 (물류/어업인은 API 응답으로 대체)
 --------------------------------------------------------- */
 export const kpis = {
-  logistics: [
-    { label: '다음 주 예측 어획량', value: '8.5톤',   sub: '전주 대비 +12%', subOk: true },
-    { label: '신뢰구간',           value: '7~10톤',  sub: '80% 신뢰수준' },
-    { label: '현재 가동률',        value: '72%',     sub: '여유 8.4톤' },
-    { label: '통영 물량 비중',     value: '43.7%',   sub: '경남 1위' },
-  ],
-  fisher: [
-    { label: '내일 예상 가격', value: '4,050원/kg', sub: '신뢰 3,700~4,400', badge: '위판가' },
-    { label: '전일 대비',      value: '−3.2%',      sub: '하락 추세', valueKind: 'danger' },
-    { label: '이번 주 물량',   value: '평년이상',    sub: '+18% 공급과잉' },
-    { label: '통영 평균 단가', value: '5,269원/kg', sub: '2023~2025' },
-  ],
   admin: [
     { label: '전체 사용자',    value: '128명',      sub: '물류42·어민81·관리5' },
     { label: '승인 대기',      value: '3명',        sub: '관리자 신청', valueKind: 'warn' },
