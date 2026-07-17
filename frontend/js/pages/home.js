@@ -9,6 +9,7 @@ import {
 } from '../components.js';
 import { icon } from '../icons.js';
 import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, regionsSync, toTon, toWon, currentWeekStart, closestWeek } from '../api.js';
+import { holidayStatus } from '../holiday.js';
 
 /** cur/prev 사이 변화율(%, digits 자리 반올림). prev가 없거나 0이면 null. */
 function pctChange(cur, prev, digits = 0) {
@@ -82,14 +83,15 @@ export function renderRoleHome(role) {
 
     // 날씨는 예측과 별개로 받아서 채운다 (아래 비동기 블록).
 
-    // 명절 알림 (어업인만) — 실제 명절 날짜 계산 로직이 없어 항상 고정 문구("추석 D-14")가
-    // 뜨는 문제로 임시 비활성화. 날짜 계산 로직이 준비되면 복구.
-    // const holidayCard = isFisher ? `
-    //   <div class="alert alert--warn">
-    //     <div class="alert__head"><span class="alert__title">${icon('warning', 16)} 명절 알림</span>${badge('추석 D-14', 'warn')}</div>
-    //     <div class="alert__body">명절 직전엔 물량이 몰려 가격이 떨어집니다 (추석 前 평균 −21%). 직후 열흘은 반등했습니다 (설날 +31%).</div>
-    //   </div>` : '';
-    const holidayCard = '';
+    // 명절 알림 (어업인만) — 설날·추석은 음력이라 확정 양력 날짜 테이블로 D-day를 판정한다
+    // (js/holiday.js). 노출 창(D-30~D+10) 밖이거나 알림 설정이 꺼져 있으면 카드를 숨긴다.
+    const holidayOn = state.notifications.find((n) => n.id === 'holiday')?.on !== false;
+    const hol = isFisher && holidayOn ? holidayStatus() : null;
+    const holidayCard = hol ? `
+      <div class="alert alert--warn">
+        <div class="alert__head"><span class="alert__title">${icon('calendar', 16)} 명절 알림</span>${badge(hol.badgeText, hol.badgeKind)}</div>
+        <div class="alert__body">${hol.message}</div>
+      </div>` : '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
 
