@@ -22,7 +22,7 @@ export const state = {
   notifications: [
     { id: 'price',     icon: 'bell',      label: '가격 급변 알림', sub: '±5% 변동',      on: true  },
     { id: 'weather',   icon: 'waves',     label: '악천후 알림',    sub: '파고3m·풍속10',  on: true  },
-    { id: 'holiday',   icon: 'calendar',  label: '명절 알림',      sub: '설날·추석',      on: true  },
+    { id: 'closedSeason', icon: 'calendar', label: '금어기 알림',    sub: '삼치 5월',       on: true  },
     { id: 'restock',   icon: 'box',       label: '입고 예측',      sub: '주간 갱신',      on: false },
     { id: 'marketing', icon: 'megaphone', label: '공지·마케팅',    sub: '서비스 소식',    on: false },
   ],

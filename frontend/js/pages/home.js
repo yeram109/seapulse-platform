@@ -9,7 +9,7 @@ import {
 } from '../components.js';
 import { icon } from '../icons.js';
 import { fetchPrediction, fetchWeather, fetchPipeline, regionIdOf, weeksOf, regionsSync, toTon, toWon, currentWeekStart, closestWeek } from '../api.js';
-import { holidayStatus } from '../holiday.js';
+import { closedSeasonStatus, closedSeasonMessage } from '../closedSeason.js';
 
 /** cur/prev 사이 변화율(%, digits 자리 반올림). prev가 없거나 0이면 null. */
 function pctChange(cur, prev, digits = 0) {
@@ -83,14 +83,15 @@ export function renderRoleHome(role) {
 
     // 날씨는 예측과 별개로 받아서 채운다 (아래 비동기 블록).
 
-    // 명절 알림 (어업인만) — 설날·추석은 음력이라 확정 양력 날짜 테이블로 D-day를 판정한다
-    // (js/holiday.js). 노출 창(D-30~D+10) 밖이거나 알림 설정이 꺼져 있으면 카드를 숨긴다.
-    const holidayOn = state.notifications.find((n) => n.id === 'holiday')?.on !== false;
-    const hol = isFisher && holidayOn ? holidayStatus() : null;
-    const holidayCard = hol ? `
+    // 금어기 알림 (물류·어업인 공통) — 삼치 금어기(매년 5/1~5/31, 양력 고정)는 조업 금지로
+    // 어획량이 0이 되어 어업인(조업)·물류(재고) 양쪽에 영향을 준다. js/closedSeason.js가
+    // 오늘 기준으로 판정하며, 노출 구간 밖이거나 알림 설정이 꺼져 있으면 카드를 숨긴다.
+    const banOn = state.notifications.find((n) => n.id === 'closedSeason')?.on !== false;
+    const ban = banOn ? closedSeasonStatus() : null;
+    const banCard = ban ? `
       <div class="alert alert--warn">
-        <div class="alert__head"><span class="alert__title">${icon('calendar', 16)} 명절 알림</span>${badge(hol.badgeText, hol.badgeKind)}</div>
-        <div class="alert__body">${hol.message}</div>
+        <div class="alert__head"><span class="alert__title">${icon('warning', 16)} 금어기 알림</span>${badge(ban.badgeText, ban.badgeKind)}</div>
+        <div class="alert__body">${closedSeasonMessage(ban, role)}</div>
       </div>` : '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
@@ -125,7 +126,7 @@ export function renderRoleHome(role) {
         </div>
         <div id="wGrid" class="wc-grid"></div>
 
-        ${holidayCard}
+        ${banCard}
 
         <div class="section-title">${isFisher ? '가격 예측' : '어획량 예측'}</div>
         <div class="chart-ph">
