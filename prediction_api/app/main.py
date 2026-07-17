@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +54,37 @@ def _split_scenario_type(scenario_type: str) -> tuple[str, str]:
     첫 "_"에서만 자른다. 형식이 어긋나면 통째로 물량수준 취급하고 가격은 빈 값."""
     volume, sep, price = scenario_type.partition("_")
     return (volume, price) if sep else (scenario_type, "")
+
+
+# 삼치 금어기(양력 고정 5/1~5/31). 이 기간은 조업이 금지돼 어획량이 사실상 0인데,
+# 모델 피처는 month뿐이라 이를 반영하지 못하고 5월에도 유의미한 어획량을 예측한다
+# (예: 통영 15.6톤). 실제와 배치되는 값이므로 이 주차는 어획량을 0으로 클램프한다.
+# 판정은 week_start의 월 기준(간단) — 5월에 걸친 경계 주는 다루지 않는다.
+CLOSED_SEASON_MONTH = 5
+
+
+def _is_closed_season(week_start: date) -> bool:
+    return week_start.month == CLOSED_SEASON_MONTH
+
+
+def _closed_season_scenario(role: Role, price_level: str) -> ScenarioResult:
+    """금어기 주차 전용 시나리오. 어획량이 0이라 일반 물량수준 추천(분산판매 등)은
+    무의미하므로 조업 금지 안내로 대체한다. 가격수준은 실제 예측을 유지한다 —
+    조업은 멈춰도 재고/냉동 물량 거래가는 유효하기 때문."""
+    if role == Role.logistics:
+        headline = "재고 소진 관리"
+        text = "삼치 금어기(5/1~5/31)로 신규 입하가 없습니다. 기존 재고 소진과 가격 상승에 대비하세요."
+    else:
+        headline = "조업 금지"
+        text = "삼치 금어기(5/1~5/31)로 조업이 금지됩니다. 해제 후 조업을 계획하세요."
+    return ScenarioResult(
+        role=role,
+        text=text,
+        headline=headline,
+        scenario_type="금어기",
+        volume_level="금어기",
+        price_level=price_level,
+    )
 
 
 @app.get("/regions", response_model=list[Region])
@@ -178,7 +210,12 @@ def get_prediction(
 
     volume_level, price_level = _split_scenario_type(scenario_row["scenario_type"])
 
-    if role == Role.logistics:
+    closed = _is_closed_season(query.week_start)
+
+    if closed:
+        # 금어기: 어획량 0으로 클램프하고 조업 관련 추천 대신 전용 안내로 대체.
+        scenario = _closed_season_scenario(role, price_level)
+    elif role == Role.logistics:
         view_row = queries.get_warehouse_view(conn, scenario_row["scenario_id"])
         base_text = _strip_baked_warning(view_row["recommendation_text"] if view_row else "")
 
@@ -190,18 +227,38 @@ def get_prediction(
             text = base_text
 
         headline = view_row["recommended_space"] if view_row else ""
+        scenario = ScenarioResult(
+            role=role,
+            text=text,
+            headline=headline,
+            scenario_type=scenario_row["scenario_type"],
+            volume_level=volume_level,
+            price_level=price_level,
+        )
     else:
         view_row = queries.get_fisher_view(conn, scenario_row["scenario_id"])
         text = view_row["recommendation_text"] if view_row else ""
         headline = view_row["timing_type"] if view_row else ""
+        scenario = ScenarioResult(
+            role=role,
+            text=text,
+            headline=headline,
+            scenario_type=scenario_row["scenario_type"],
+            volume_level=volume_level,
+            price_level=price_level,
+        )
 
-    scenario = ScenarioResult(
-        role=role,
-        text=text,
-        headline=headline,
-        scenario_type=scenario_row["scenario_type"],
-        volume_level=volume_level,
-        price_level=price_level,
+    # 금어기 주차는 어획량을 0으로 클램프(위판가는 유지 — 재고 거래가는 유효).
+    predicted_catch = (
+        ValueWithBounds(value=0.0, lower_bound=0.0, upper_bound=0.0, uncertain=False, mae=catch_row["mae"])
+        if closed
+        else ValueWithBounds(
+            value=catch_row["predicted_catch"],
+            lower_bound=catch_row["lower_bound"],
+            upper_bound=catch_row["upper_bound"],
+            uncertain=bool(catch_row["catch_uncertain"]),
+            mae=catch_row["mae"],
+        )
     )
 
     return PredictionResponse(
@@ -209,13 +266,7 @@ def get_prediction(
         week_start=query.week_start,
         model_version_catch=catch_row["model_version"],
         model_version_price=price_row["model_version"],
-        predicted_catch=ValueWithBounds(
-            value=catch_row["predicted_catch"],
-            lower_bound=catch_row["lower_bound"],
-            upper_bound=catch_row["upper_bound"],
-            uncertain=bool(catch_row["catch_uncertain"]),
-            mae=catch_row["mae"],
-        ),
+        predicted_catch=predicted_catch,
         predicted_price=ValueWithBounds(
             value=price_row["predicted_price"],
             lower_bound=price_row["lower_bound"],
