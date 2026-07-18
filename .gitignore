@@ -22,3 +22,7 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# 빌드 산출물 / 대용량 바이너리 (root 를 정식 소스로 사용)
+dist/
+cloudflared

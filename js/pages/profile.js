@@ -3,7 +3,7 @@
 import { navigate } from '../router.js';
 import { ensureSession } from '../state.js';
 import { roleMeta } from '../../data/mock.js';
-import { navBar, wire, toast } from '../components.js';
+import { navBar, avatar, wire, toast } from '../components.js';
 import { icon } from '../icons.js';
 
 export function renderProfile(root) {
@@ -13,7 +13,7 @@ export function renderProfile(root) {
       ${navBar('프로필 수정', '/settings')}
 
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-        <div class="avatar avatar--lg">${icon(roleMeta[s.roleKey].icon, 34)}</div>
+        ${avatar(s.roleKey, 34, true)}
         <span class="textlink" data-toast="사진 변경은 준비 중이에요">사진 변경</span>
       </div>
 

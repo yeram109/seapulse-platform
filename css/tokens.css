@@ -1,0 +1,94 @@
+/* ============================================================
+   tokens.css — 디자인 토큰 (색상·간격·타이포·둥글기)
+   · [data-theme="dark"]  = 기본(다크)
+   · [data-theme="light"] = 라이트
+   · 색상은 Figma 원본에서 추출 → Tailwind slate + sky 계열
+   앞으로 모든 화면은 원시 hex 대신 이 변수(var(--xxx))만 사용한다.
+   ============================================================ */
+
+:root {
+  /* --- 브랜드(딥 블루): 테마와 무관하게 공통 --- */
+  --brand: #1e88e5;          /* 로그인 버튼 · 실측 배지 · 강조 */
+  --brand-strong: #1565c0;   /* 눌렀을 때(active) */
+  --on-brand: #ffffff;       /* 브랜드 색 위 글자 */
+
+  /* --- 상태 색상: 배지·경보 (테마 무관) --- */
+  --ok: #22c55e;      /* 성공/정상/조업양호/희소성 = 초록 */
+  --warn: #f59e0b;    /* 경보/고수온/공급과잉/미수집 = 앰버 */
+  --danger: #ef4444;  /* 위험/가격하락 = 빨강 */
+  --neutral: #708090; /* 예측/비수기/중립 = 회색 */
+
+  /* --- 간격 스케일 (4의 배수) --- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+
+  /* --- 모서리 둥글기 --- */
+  --r-sm: 8px; --r-md: 10px; --r-lg: 12px; --r-xl: 16px; --r-full: 999px;
+
+  /* --- 폰 프레임 폭 --- */
+  --phone-w: 390px;
+
+  /* --- 폰트 (한글 잘 나오는 시스템 폰트 스택, 외부 로드 없음) --- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+               "Malgun Gothic", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ===== 다크 테마 (기본) ===== */
+[data-theme="dark"] {
+  --bg:          #090c12;  /* 앱 배경 */
+  --surface:     #131924;  /* 카드 · 입력창 배경 */
+  --surface-2:   #1b2331;  /* 한 단계 밝은 표면 (칩 등) */
+  --border:      #4a586e;  /* 기본 테두리 (입력창) */
+  --border-weak: #29323f;  /* 약한 테두리 (구분선 · 체크박스) */
+  --text:        #ffffff;  /* 본문 · 제목 (대비 강화) */
+  --text-sub:    #d3dce8;  /* 보조 텍스트 · 라벨 */
+  --text-muted:  #aab6c6;  /* 흐린 텍스트 · placeholder */
+  --brand-tint:  rgba(30, 136, 229, 0.16); /* 닉네임 필드 등 연한 브랜드 배경 */
+  --outer-bg:    #04060a;  /* 폰 바깥(데스크톱) 배경 */
+}
+
+/* ===== 라이트 테마 ===== */
+[data-theme="light"] {
+  --bg:          #eef1f6;
+  --surface:     #ffffff;
+  --surface-2:   #f0f3f8;
+  --border:      #c6d0de;
+  --border-weak: #dde4ee;
+  --text:        #08111f;
+  --text-sub:    #3a475c;
+  --text-muted:  #5a6980;
+  --brand-tint:  rgba(21, 101, 192, 0.10);
+  --outer-bg:    #dae0ea;
+}
+
+/* ============================================================
+   확장 토큰 — 배지 · 역할색 · 탭바 (전 화면 구현용, 02_디자인_토큰 기준)
+   배지는 항상 [연한 배경 --xxx-bg] + [진한 글자 --xxx-text] 짝으로 쓴다.
+   ============================================================ */
+[data-theme="dark"] {
+  --tabbar-bg:   #0d1219;   /* 하단 탭바 배경 */
+
+  --brand-bg:   #0c2a49;  --brand-text:   #8ec6f7;                           /* 딥블루 = 실측·물류 */
+  --ok-bg:      #0c2c22;  --ok-text:      #7bf0b2;  --ok-border:   #17624a;  /* 초록 = 정상·희소성·어업인 */
+  --warn-bg:    #2e2410;  --warn-text:    #ffd47a;  --warn-border: #6a4e18;  /* 앰버 = 경보·공급과잉·미수집 */
+  --danger-bg:  #2e1513;  --danger-text:  #ffa19b;  --danger-border:#7d2c28; /* 빨강 = 위험·가격하락 */
+  --neutral-bg: #1b2331;  --neutral-text: #aab6c6;                           /* 회색 = 예측·비수기 */
+
+  --admin:  #8b5cf6;  --admin-bg: #211a38;  --admin-text: #c4b5fd;           /* 바이올렛 = 관리자 */
+  --cool:   #0c2a49;  --cool-text: #8ec6f7;                                  /* 수온 등 */
+  --card-shadow: none;
+}
+
+[data-theme="light"] {
+  --tabbar-bg:   #e6ebf2;
+
+  --brand-bg:   #d7e9fb;  --brand-text:   #135ba8;
+  --ok-bg:      #dff5ea;  --ok-text:      #12864f;  --ok-border:   #a7dabf;
+  --warn-bg:    #f9edd6;  --warn-text:    #a06f1c;  --warn-border: #e6cfa0;
+  --danger-bg:  #fde2e2;  --danger-text:  #c5352f;  --danger-border:#eeb3b0;
+  --neutral-bg: #f0f3f8;  --neutral-text: #5a6980;
+
+  --admin:  #6d28d9;  --admin-bg: #ede8fa;  --admin-text: #6d28d9;
+  --cool:   #d7e9fb;  --cool-text: #135ba8;
+  --card-shadow: 0 1px 3px rgba(38, 51, 77, 0.06);
+}

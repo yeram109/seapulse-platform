@@ -16,25 +16,13 @@ export function navigate(path) {
   else location.hash = path;                          // 다르면 hashchange 이벤트가 렌더 트리거
 }
 
-// 렌더가 async 라서, 느린 화면의 응답이 늦게 도착해 다음 화면을 덮어쓸 수 있다.
-// 렌더마다 번호를 매겨서 "가장 최근 렌더"만 DOM 에 쓰도록 한다.
-let renderToken = 0;
-
-/** 지금 이 렌더가 아직 유효한지 (화면을 그려도 되는지) */
-export function isStale(token) {
-  return token !== renderToken;
-}
-
 /** 현재 해시에 맞는 화면을 그린다 */
-async function renderCurrent() {
+function renderCurrent() {
   const path = location.hash.slice(1) || fallbackPath;   // '#/login' → '/login'
   const render = routes.get(path) || routes.get(fallbackPath);
   const root = document.getElementById('app');
-  const token = ++renderToken;
-
   root.innerHTML = '';   // 이전 화면 지우기
-  await render(root, token);   // 새 화면 그리기 (async 렌더면 기다린다)
-  if (isStale(token)) return;  // 그 사이 다른 화면으로 넘어갔으면 스크롤 건드리지 않음
+  render(root);          // 새 화면 그리기
   root.scrollTop = 0;    // 맨 위로
 }
 

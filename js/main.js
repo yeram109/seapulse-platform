@@ -3,11 +3,11 @@
 
 import { initTheme } from './theme.js';
 import { registerRoute, startRouter } from './router.js';
-import { fetchRegions } from './api.js';
 
 import { renderLogin } from './pages/login.js';
 import { renderSignup } from './pages/signup.js';
-import { renderHomeLogistics, renderHomeFisher, renderHomeAdmin } from './pages/home.js';
+import { renderHomeLogistics, renderHomeFisher } from './pages/home.js';
+import { renderHomeAdmin, renderAdminUsers, renderAdminData } from './pages/admin.js';
 import { renderWeather } from './pages/weather.js';
 import { renderSettings } from './pages/settings.js';
 import { renderProfile } from './pages/profile.js';
@@ -32,6 +32,8 @@ registerRoute('/signup/admin',     renderSignup('admin'));
 registerRoute('/home/logistics', renderHomeLogistics);
 registerRoute('/home/fisher',    renderHomeFisher);
 registerRoute('/home/admin',     renderHomeAdmin);
+registerRoute('/admin/users',    renderAdminUsers);
+registerRoute('/admin/data',     renderAdminData);
 
 // 08 날씨
 registerRoute('/weather', renderWeather);
@@ -45,11 +47,6 @@ registerRoute('/settings/notifications', renderNotifications);
 registerRoute('/settings/withdraw',      renderWithdraw);
 registerRoute('/settings/saved',         renderSavedPredictions);
 registerRoute('/settings/report',        renderReportCreate);
-
-// 항구 목록을 미리 받아둔다. 회원가입 드롭다운·지역 모달은 동기 렌더라
-// 그릴 때 이미 캐시에 있어야 한다. 서버가 꺼져 있어도 앱은 떠야 하므로
-// 실패는 삼키고, 그 화면들은 빈 목록으로 그려진다.
-await fetchRegions().catch((e) => console.warn('[regions] 로드 실패:', e.message));
 
 // 첫 화면은 로그인
 startRouter('/login');

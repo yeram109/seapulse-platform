@@ -10,7 +10,7 @@
     {
       "name": "frontend",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["frontend/server.js"],
+      "runtimeArgs": ["server.js"],
       "port": 3000
     }
   ]

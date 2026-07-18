@@ -3,8 +3,7 @@
 
 import { navigate } from '../router.js';
 import { startSession } from '../state.js';
-import { roleMeta } from '../../data/mock.js';
-import { regionsSync } from '../api.js';
+import { roleMeta, regions } from '../../data/mock.js';
 import { wire } from '../components.js';
 
 export function renderSignup(role) {
@@ -23,7 +22,7 @@ export function renderSignup(role) {
       <label class="field">
         <span class="field__label">활동 지역 (경남 · 위판 항구)</span>
         <select class="select" id="suRegion">
-          ${regionsSync().map((r) => `<option ${r.name === '통영' ? 'selected' : ''}>${r.name}</option>`).join('')}
+          ${regions.map((r) => `<option ${r.name === '통영' ? 'selected' : ''}>${r.name}</option>`).join('')}
         </select>
       </label>`;
 
