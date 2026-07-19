@@ -4,6 +4,7 @@
 import { navigate } from '../router.js';
 import { startSession } from '../state.js';
 import { roleMeta, regions } from '../../data/mock.js';
+import { regionsSync } from '../api.js';
 import { wire } from '../components.js';
 
 export function renderSignup(role) {
@@ -17,12 +18,13 @@ export function renderSignup(role) {
         </div>`;
     };
 
-    // 활동 지역 (관리자는 없음)
+    // 활동 지역 (관리자는 없음). 백엔드가 살아있으면 /regions 목록, 아니면 mock.
+    const regionList = regionsSync().length ? regionsSync() : regions;
     const regionField = role === 'admin' ? '' : `
       <label class="field">
         <span class="field__label">활동 지역 (경남 · 위판 항구)</span>
         <select class="select" id="suRegion">
-          ${regions.map((r) => `<option ${r.name === '통영' ? 'selected' : ''}>${r.name}</option>`).join('')}
+          ${regionList.map((r) => `<option ${r.name === '통영' ? 'selected' : ''}>${r.name}</option>`).join('')}
         </select>
       </label>`;
 
