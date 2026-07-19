@@ -36,7 +36,8 @@ const server = http.createServer(async (req, res) => {
   try {
     const data = await readFile(filePath);
     const type = MIME[extname(filePath)] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': type });
+    // 개발 서버 — 브라우저가 예전 파일을 캐시해 새 코드가 안 보이는 일을 막는다
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
     res.end(data);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

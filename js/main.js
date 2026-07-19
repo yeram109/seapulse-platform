@@ -9,7 +9,7 @@ import { fetchRegions } from './api.js';
 // 실패해도(서버 꺼짐) 무시 — 각 화면이 mock으로 동작한다.
 fetchRegions().catch(() => {});
 
-import { renderSplash } from './pages/splash.js';
+import { showSplash } from './pages/splash.js';
 import { renderLogin } from './pages/login.js';
 import { renderSignup } from './pages/signup.js';
 import { renderHomeLogistics, renderHomeFisher } from './pages/home.js';
@@ -26,8 +26,8 @@ import { renderReportCreate } from './pages/reportCreate.js';
 
 initTheme();
 
-// 00 시작 스플래시 (로고 애니메이션 → 로그인)
-registerRoute('/splash', renderSplash);
+// 00 시작 스플래시 — 페이지 로드 시 앱 위에 오버레이로 잠깐 표시 (라우팅 무관)
+showSplash();
 
 // 01 로그인
 registerRoute('/login', renderLogin);
@@ -57,6 +57,5 @@ registerRoute('/settings/withdraw',      renderWithdraw);
 registerRoute('/settings/saved',         renderSavedPredictions);
 registerRoute('/settings/report',        renderReportCreate);
 
-// 첫 진입은 스플래시(딥링크로 들어온 경우엔 그 화면 그대로). 없는 경로 폴백은 로그인.
-if (!location.hash || location.hash === '#' || location.hash === '#/') location.hash = '/splash';
+// 첫 화면은 로그인 (스플래시는 위에서 오버레이로 덮어 보여준 뒤 사라진다)
 startRouter('/login');

@@ -92,11 +92,18 @@
 .logo-dots span:nth-child(2) { width: 10px; height: 10px; opacity: 0.75; }
 .logo-dots span:nth-child(3) { width: 14px; height: 14px; }
 
-/* ---- 시작 스플래시 ---- */
+/* ---- 시작 스플래시 (오버레이) ---- */
+.splash-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.45s ease;
+}
+.splash-overlay.is-hiding { opacity: 0; pointer-events: none; }
 .splash {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 24px; gap: 0;
-  animation: screen-in 0.3s ease;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 24px;
+  animation: screen-in 0.35s ease;
 }
 /* 로고: 동그라미 3개가 데이터처럼 하나씩 나와 셋 다 보이고 반복 */
 .logo-dots--splash { gap: 9px; height: auto; margin-bottom: 26px; }
