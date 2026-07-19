@@ -30,11 +30,13 @@ export function predWeeks(today = new Date()) {
   monThis.setHours(0, 0, 0, 0);
 
   const labels = ['전주', '이번주', '다음주', '다다음주'];
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return [-1, 0, 1, 2].map((off, i) => {
     const mon = new Date(monThis);
     mon.setDate(monThis.getDate() + off * 7);
     const sun = new Date(mon);
     sun.setDate(mon.getDate() + 6);
-    return { label: labels[i], week: isoWeek(mon), range: `${fmtMD(mon)}–${fmtMD(sun)}`, now: off === 0 };
+    // weekStart: 예측 API 조회용 월요일 날짜(YYYY-MM-DD)
+    return { label: labels[i], week: isoWeek(mon), range: `${fmtMD(mon)}–${fmtMD(sun)}`, now: off === 0, weekStart: iso(mon) };
   });
 }

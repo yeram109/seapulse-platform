@@ -1,6 +1,6 @@
 // pages/home.js — 05·06·07 홈 (물류 / 어업인 / 관리자)
 
-import { navigate } from '../router.js';
+import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
 import { kpis, weeklyWeather, scenarioPairs } from '../../data/mock.js';
 import {
@@ -10,6 +10,7 @@ import {
 import { icon } from '../icons.js';
 import { closedSeasonStatus, closedSeasonMessage } from '../closedSeason.js';
 import { predWeeks } from '../weeks.js';
+import { regionIdOf, fetchWeather, fetchPrediction } from '../api.js';
 
 // 오늘 기준 주차 라벨(전주·이번주·다음주·다다음주)에 예측값을 얹어 차트 포인트 생성.
 // 앞 2주(전주·이번주)=실측, 뒤 2주(다음주·다다음주)=예측(+신뢰구간 밴드). 값은 UI 목업.
@@ -21,9 +22,69 @@ function buildPredPoints(values, bands) {
   });
 }
 
+/* ---- 백엔드 연동 (있으면 실제값으로 교체, 없으면 mock 유지) ---- */
+// API WeatherWeek → weatherCardCompact 가 쓰는 형태로 매핑
+function mapWeather(a) {
+  return {
+    week: a.week_of_year, range: a.range, type: a.type,
+    temp: a.water_temp ?? '—', tempDiff: a.water_temp_diff ?? 0,
+    wind: a.wind_speed ?? '—', windDiff: a.wind_speed_diff ?? 0,
+  };
+}
+// API는 상태 문구를 안 주므로 수온·풍속에서 간단히 도출
+function weatherStatus(a) {
+  if (a.wind_speed != null && a.wind_speed >= 9) return { text: '강풍 주의', kind: 'warn' };
+  if (a.water_temp != null && a.water_temp >= 27) return { text: '고수온 주의', kind: 'warn' };
+  return { text: '조업 양호', kind: 'ok' };
+}
+
+// mock으로 먼저 그린 화면을, API가 살아있으면 실제 예측/날씨로 덮어쓴다.
+// 실패(서버 꺼짐·CORS·범위밖)하면 조용히 mock 상태를 유지한다.
+async function upgradeHome(root, token, role, isFisher, mockPoints) {
+  const s = state.session;
+  let regionId;
+  try { regionId = await regionIdOf(s.region); } catch { return; }   // API 미연결 → mock 유지
+  if (isStale(token) || regionId == null) return;
+  const capacityTon = s.warehouseCapacityTon ?? 500;
+
+  // 주간 날씨(2주) 교체 — 예측과 독립이라 실패해도 예측은 계속 시도
+  fetchWeather(regionId, 2).then((ws) => {
+    if (isStale(token) || !Array.isArray(ws) || ws.length < 2) return;
+    const g = root.querySelector('#wGrid');
+    if (!g) return;
+    const s0 = weatherStatus(ws[0]), s1 = weatherStatus(ws[1]);
+    g.innerHTML =
+      weatherCardCompact(mapWeather(ws[0]), { label: '이번 주', statusText: s0.text, statusKind: s0.kind, active: true }) +
+      weatherCardCompact(mapWeather(ws[1]), { label: '다음 주', statusText: s1.text, statusKind: s1.kind });
+  }).catch(() => {});
+
+  // 4주 예측 → 차트 교체. 배포 예측이 있는 주만 실제값, 나머지는 mock 포인트 유지.
+  const weeks = predWeeks();
+  const preds = await Promise.all(weeks.map((w) =>
+    fetchPrediction({ regionId, weekStart: w.weekStart, role, capacityTon }).catch(() => null)));
+  if (isStale(token) || !preds.some(Boolean)) return;   // 한 주도 없으면 mock 유지
+
+  const pick = isFisher ? (p) => p.predicted_price : (p) => p.predicted_catch;
+  const conv = isFisher ? (v) => v : (v) => v / 1000;   // 가격 원 그대로 / 어획량 kg→톤
+  const fmt  = isFisher ? (v) => Math.round(v).toLocaleString() : (v) => v.toFixed(1);
+  const points = weeks.map((w, i) => {
+    const base = { ...mockPoints[i] };
+    const pr = preds[i];
+    if (pr) {
+      const b = pick(pr);
+      base.value = conv(b.value);
+      if (base.type === '예측') { base.lo = conv(b.lower_bound); base.hi = conv(b.upper_bound); }
+      base.uncertain = b.uncertain;
+    }
+    return base;
+  });
+  const el = root.querySelector('#predChart');
+  if (el) el.innerHTML = predictionChart(points, { fmt });
+}
+
 /* ============================ 05 / 06 물류·어업인 홈 ============================ */
 export function renderRoleHome(role) {
-  return function (root) {
+  return async function (root, token) {
     state.role = role;
     const s = ensureSession();
     const isFisher = role === 'fisher';
@@ -36,7 +97,7 @@ export function renderRoleHome(role) {
     // 날씨: 이번 주(실측) + 다음 주(예측) 2단. 이번 주 상태는 역할별로 다름.
     const thisWeek = isFisher ? { text: '강풍 · 출항 주의', kind: 'warn' } : { text: '고수온 주의', kind: 'warn' };
     const weatherGrid = `
-      <div class="wc-grid">
+      <div class="wc-grid" id="wGrid">
         ${weatherCardCompact(weeklyWeather[0], { label: '이번 주', statusText: thisWeek.text, statusKind: thisWeek.kind, active: true })}
         ${weatherCardCompact(weeklyWeather[1], { label: '다음 주', statusText: '조업 양호', statusKind: 'ok' })}
       </div>`;
@@ -104,7 +165,7 @@ export function renderRoleHome(role) {
             <div class="section-sub">${chartLabel} · 단위 ${predSeries.unit} · 전주~다다음주 4주</div>
           </div>
         </div>
-        ${predictionChart(predSeries.points, { fmt: predSeries.fmt })}
+        <div id="predChart">${predictionChart(predSeries.points, { fmt: predSeries.fmt })}</div>
 
         ${kpiGrid(kpis[role])}
 
@@ -124,6 +185,9 @@ export function renderRoleHome(role) {
       el.addEventListener('click', () => { state.scenarioKey[role] = el.dataset.scnkey; navigate('/home/' + role); }));
 
     wire(root);
+
+    // 백엔드가 살아있으면 예측 차트·날씨를 실제값으로 교체 (없으면 mock 유지)
+    upgradeHome(root, token, role, isFisher, predSeries.points).catch(() => {});
   };
 }
 

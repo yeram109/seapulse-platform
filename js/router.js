@@ -5,6 +5,12 @@
 const routes = new Map();
 let fallbackPath = '/login';
 
+// 렌더 토큰: 비동기 렌더(예: API로 화면을 나중에 채우는 경우)가 끝나기 전에
+// 다른 화면으로 넘어갔는지 판단한다. 렌더할 때마다 증가시키고, 비동기 콜백은
+// isStale(token) 로 자기 화면이 아직 유효한지 확인한 뒤에만 DOM을 건드린다.
+let renderToken = 0;
+export function isStale(token) { return token !== renderToken; }
+
 /** 라우트 등록: registerRoute('/login', renderLogin) */
 export function registerRoute(path, renderFn) {
   routes.set(path, renderFn);
@@ -21,8 +27,9 @@ function renderCurrent() {
   const path = location.hash.slice(1) || fallbackPath;   // '#/login' → '/login'
   const render = routes.get(path) || routes.get(fallbackPath);
   const root = document.getElementById('app');
+  const token = ++renderToken;   // 이번 렌더의 고유 번호
   root.innerHTML = '';   // 이전 화면 지우기
-  render(root);          // 새 화면 그리기
+  render(root, token);   // 새 화면 그리기 (async 렌더는 token 으로 staleness 확인)
   root.scrollTop = 0;    // 맨 위로
 }
 
