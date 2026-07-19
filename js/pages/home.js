@@ -2,7 +2,7 @@
 
 import { navigate, isStale } from '../router.js';
 import { state, ensureSession } from '../state.js';
-import { kpis, weeklyWeather, scenarioPairs } from '../../data/mock.js';
+import { kpis, weeklyWeather } from '../../data/mock.js';
 import {
   logoBar, tabBar, roleBadge, badge, weatherCardCompact,
   kpiGrid, scenarioCard, predictionChart, wire,
@@ -147,12 +147,14 @@ export function renderRoleHome(role) {
         ${weatherCardCompact(weeklyWeather[1], { label: '다음 주', statusText: '조업 양호', statusKind: 'ok' })}
       </div>`;
 
-    // 금어기 알림 (어업인만) — 명절 대신 삼치 금어기(5/1~5/31)로 교체
-    const cs = closedSeasonStatus();
-    const closedSeasonCard = isFisher ? `
-      <div class="alert alert--${cs.alertKind}">
-        <div class="alert__head"><span class="alert__title">${icon(cs.iconName, 16)} 삼치 금어기 알림</span>${badge(cs.badgeText, cs.badgeKind)}</div>
-        <div class="alert__body">${closedSeasonMessage(cs, role)}</div>
+    // 금어기 알림 (물류·어업인 공통) — 마스터 로직: 시작 D-30 이내 또는 금어기 기간에만
+    // 노출(그 외 null=숨김), 알림 설정이 꺼져 있으면 숨김.
+    const banOn = state.notifications.find((n) => n.id === 'closedSeason')?.on !== false;
+    const ban = banOn ? closedSeasonStatus() : null;
+    const banCard = ban ? `
+      <div class="alert alert--warn">
+        <div class="alert__head"><span class="alert__title">${icon('warning', 16)} 금어기 알림</span>${badge(ban.badgeText, ban.badgeKind)}</div>
+        <div class="alert__body">${closedSeasonMessage(ban, role)}</div>
       </div>` : '';
 
     const chartLabel = isFisher ? 'kg당 가격 추이' : '어획량 추이';
@@ -165,12 +167,7 @@ export function renderRoleHome(role) {
       : { unit: '톤', fmt: (v) => v.toFixed(1),
           points: buildPredPoints([7.6, 8.0, 8.5, 7.9], [null, null, [7.0, 10.0], [6.5, 9.3]]) };
 
-    const pair = scenarioPairs[role];
     const curKey = state.scenarioKey[role];
-    const scnToggle = `
-      <div class="scn-toggle">
-        ${pair.map((p) => `<button class="${p.key === curKey ? 'is-active' : ''}" data-scnkey="${p.key}">${p.label}</button>`).join('')}
-      </div>`;
 
     root.innerHTML = `
       <section class="screen screen--tab">
@@ -202,7 +199,7 @@ export function renderRoleHome(role) {
         </div>
         ${weatherGrid}
 
-        ${closedSeasonCard}
+        ${banCard}
 
         <div class="section-head">
           <div>
@@ -214,8 +211,6 @@ export function renderRoleHome(role) {
 
         <div id="kpiSlot">${kpiGrid(kpis[role])}</div>
 
-        <div class="section-title">추천</div>
-        ${scnToggle}
         <div id="scnCard">${scenarioCard(curKey)}</div>
       </section>
       ${tabBar('home')}
@@ -224,10 +219,6 @@ export function renderRoleHome(role) {
     // 지역 칩 클릭 → 활성 지역 변경
     root.querySelectorAll('[data-region]').forEach((el) =>
       el.addEventListener('click', () => { s.region = el.dataset.region; navigate('/home/' + role); }));
-
-    // 시나리오 토글
-    root.querySelectorAll('[data-scnkey]').forEach((el) =>
-      el.addEventListener('click', () => { state.scenarioKey[role] = el.dataset.scnkey; navigate('/home/' + role); }));
 
     wire(root);
 
