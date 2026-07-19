@@ -92,6 +92,28 @@
 .logo-dots span:nth-child(2) { width: 10px; height: 10px; opacity: 0.75; }
 .logo-dots span:nth-child(3) { width: 14px; height: 14px; }
 
+/* ---- 시작 스플래시 ---- */
+.splash {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; gap: 0;
+  animation: screen-in 0.3s ease;
+}
+/* 로고: 동그라미 3개가 데이터처럼 하나씩 나와 셋 다 보이고 반복 */
+.logo-dots--splash { gap: 9px; height: auto; margin-bottom: 26px; }
+.logo-dots--splash span { opacity: 0; animation: dotSeq 2s infinite; }
+.logo-dots--splash span:nth-child(1) { width: 13px; height: 13px; animation-delay: 0s; }
+.logo-dots--splash span:nth-child(2) { width: 19px; height: 19px; animation-delay: 0.25s; }
+.logo-dots--splash span:nth-child(3) { width: 25px; height: 25px; animation-delay: 0.5s; }
+@keyframes dotSeq {
+  0%   { opacity: 0;   transform: scale(0.4); }
+  15%  { opacity: 1;   transform: scale(1.12); }
+  26%  { opacity: 1;   transform: scale(1); }
+  84%  { opacity: 1;   transform: scale(1); }   /* 셋 다 보이는 구간 */
+  100% { opacity: 0;   transform: scale(0.4); }
+}
+.splash__name { font-size: 30px; font-weight: 800; letter-spacing: -0.6px; color: var(--text); }
+.splash__note { margin-top: 18px; font-size: 13px; line-height: 1.75; color: var(--text-muted); }
+
 /* 홈 상단 로고 바 */
 .logobar { display: flex; align-items: center; gap: 9px; }
 .logobar__name { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; color: var(--text); }

@@ -126,6 +126,22 @@ export function toWon(won) {
   return `${Math.round(won).toLocaleString()}원/kg`;
 }
 
+/** API WeatherWeek → 화면 날씨 카드가 쓰는 형태로 매핑 */
+export function weatherToCard(a) {
+  return {
+    week: a.week_of_year, range: a.range, type: a.type,
+    temp: a.water_temp ?? '—', tempDiff: a.water_temp_diff ?? 0,
+    wind: a.wind_speed ?? '—', windDiff: a.wind_speed_diff ?? 0,
+  };
+}
+
+/** API는 상태 문구를 안 주므로 수온·풍속에서 간단히 도출 */
+export function weatherStatus(a) {
+  if (a.wind_speed != null && a.wind_speed >= 9) return { text: '강풍 주의', kind: 'warn' };
+  if (a.water_temp != null && a.water_temp >= 27) return { text: '고수온 주의', kind: 'warn' };
+  return { text: '조업 양호', kind: 'ok' };
+}
+
 /** '2025-12-08' → '12/8 주' */
 export function weekLabel(iso) {
   const [, m, d] = iso.split('-');

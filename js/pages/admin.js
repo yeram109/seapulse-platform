@@ -3,9 +3,10 @@
 // 바꿔서(대기→활성) 카운트가 실시간으로 반영되게 한다. (예측 데이터는 건드리지 않음)
 
 import { state, ensureSession } from '../state.js';
-import { refresh } from '../router.js';
+import { refresh, isStale } from '../router.js';
 import { logoBar, tabBar, roleBadge, badge, kpiGrid, wire, toast } from '../components.js';
 import { icon } from '../icons.js';
+import { fetchPipeline } from '../api.js';
 import {
   getPending, approveUser, allActiveUsers, approvalLog, dataSources,
   totalUsers, pendingCount, roleCount,
@@ -143,33 +144,61 @@ export function renderAdminUsers(root) {
 }
 
 /* ============================ 07-3 데이터 파이프라인 ============================ */
-export function renderAdminData(root) {
-  state.role = 'admin';
-
-  const okCount = dataSources.filter((d) => d.kind === 'ok').length;
-  const cards = dataSources.map((d) => `
+const PIPE_SRC = {
+  '위판 (수협)': '경남 위판장 실적',
+  '해양 날씨 (부이)': '통영 해양기상부이',
+  '노량진 소매': '노량진수산시장 소매 시세',
+};
+function dsrcCard(d) {
+  return `
     <div class="dsrc">
-      <div class="dsrc__top">
-        <span class="dsrc__name">${d.name}</span>
-        ${badge(d.status, d.kind)}
-      </div>
+      <div class="dsrc__top"><span class="dsrc__name">${d.name}</span>${badge(d.status, d.kind)}</div>
       <div class="dsrc__src">${icon('pin', 13)} ${d.source}</div>
       <div class="dsrc__foot">
         <span>${icon('database', 13)} ${d.count}</span>
         <span>${icon('clock', 13)} 동기화 ${d.lastSync}</span>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+// API PipelineSource → dsrc 카드 데이터
+function pipelineToCard(p) {
+  const ok = p.latest != null;
+  return {
+    name: p.name, count: `${(p.count ?? 0).toLocaleString()}건`,
+    status: ok ? '정상' : '미수집', kind: ok ? 'ok' : 'warn',
+    source: PIPE_SRC[p.name] || '수집 원본', lastSync: p.latest ?? '—',
+  };
+}
+
+export function renderAdminData(root, token) {
+  state.role = 'admin';
+
+  const okCount = dataSources.filter((d) => d.kind === 'ok').length;
+  const cards = dataSources.map(dsrcCard).join('');
 
   root.innerHTML = `
     <section class="screen screen--tab">
       ${adminHeader()}
       <div class="section-head">
-        <div><div class="section-title">데이터 파이프라인</div><div class="section-sub">${okCount}/${dataSources.length} 소스 정상</div></div>
+        <div><div class="section-title">데이터 파이프라인</div><div class="section-sub" id="dsrcSub">${okCount}/${dataSources.length} 소스 정상</div></div>
       </div>
-      <div class="dsrc-list">${cards}</div>
+      <div class="dsrc-list" id="dsrcList">${cards}</div>
       <button class="btn btn--primary" data-toast="데이터 동기화를 시작했어요">지금 동기화</button>
     </section>
     ${tabBar('data')}
   `;
   wire(root);
+
+  // ── 백엔드 연동: 실제 파이프라인 현황으로 교체 (실패 시 mock 유지) ──
+  (async () => {
+    try {
+      const rows = await fetchPipeline();
+      if (isStale(token) || !Array.isArray(rows) || !rows.length) return;
+      const mapped = rows.map(pipelineToCard);
+      const list = root.querySelector('#dsrcList');
+      const sub = root.querySelector('#dsrcSub');
+      if (list) list.innerHTML = mapped.map(dsrcCard).join('');
+      if (sub) sub.textContent = `${mapped.filter((d) => d.kind === 'ok').length}/${mapped.length} 소스 정상`;
+    } catch { /* API 미연결 → mock 유지 */ }
+  })();
 }

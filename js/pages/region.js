@@ -4,6 +4,7 @@ import { navigate, refresh } from '../router.js';
 import { ensureSession } from '../state.js';
 import { regionMeta } from '../../data/mock.js';
 import { navBar, wire, toast, openRegionModal } from '../components.js';
+import { regionMetaSync } from '../api.js';
 
 export function renderRegion(root) {
   const s = ensureSession();
@@ -14,7 +15,7 @@ export function renderRegion(root) {
       <div class="radio-row ${sel ? 'is-sel' : ''}" data-region="${name}">
         <span class="radio-dot"></span>
         <div class="radio-row__main"><span class="radio-row__label">${name}</span></div>
-        <span class="radio-row__meta">${regionMeta(name)}</span>
+        <span class="radio-row__meta">${regionMetaSync(name) || regionMeta(name)}</span>
       </div>`;
   }).join('');
 

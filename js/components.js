@@ -3,6 +3,7 @@
 import { navigate, refresh } from './router.js';
 import { state, startSession } from './state.js';
 import { scenarios, roleMeta, regions, regionMeta } from '../data/mock.js';
+import { regionMetaSync } from './api.js';
 import { icon } from './icons.js';
 
 /* ============================ 작은 조각 ============================ */
@@ -371,7 +372,7 @@ export function openRegionModal() {
           <div class="sheet-row ${r.pending ? 'sheet-row--pending' : ''}">
             <div class="sheet-row__main">
               <span class="sheet-row__name">${r.name}${r.pending ? ' ' + badge('준비 중', 'neutral') : ''}</span>
-              <span class="sheet-row__sub">${regionMeta(r.name)}</span>
+              <span class="sheet-row__sub">${regionMetaSync(r.name) || regionMeta(r.name)}</span>
             </div>
             <button class="btn btn--sm btn--primary" data-add-region="${r.name}">추가</button>
           </div>`).join('')

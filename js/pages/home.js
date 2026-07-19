@@ -10,7 +10,7 @@ import {
 import { icon } from '../icons.js';
 import { closedSeasonStatus, closedSeasonMessage } from '../closedSeason.js';
 import { predWeeks } from '../weeks.js';
-import { regionIdOf, fetchWeather, fetchPrediction } from '../api.js';
+import { regionIdOf, fetchWeather, fetchPrediction, regionsSync, toTon, toWon, weatherToCard, weatherStatus } from '../api.js';
 
 // 오늘 기준 주차 라벨(전주·이번주·다음주·다다음주)에 예측값을 얹어 차트 포인트 생성.
 // 앞 2주(전주·이번주)=실측, 뒤 2주(다음주·다다음주)=예측(+신뢰구간 밴드). 값은 UI 목업.
@@ -23,19 +23,54 @@ function buildPredPoints(values, bands) {
 }
 
 /* ---- 백엔드 연동 (있으면 실제값으로 교체, 없으면 mock 유지) ---- */
-// API WeatherWeek → weatherCardCompact 가 쓰는 형태로 매핑
-function mapWeather(a) {
-  return {
-    week: a.week_of_year, range: a.range, type: a.type,
-    temp: a.water_temp ?? '—', tempDiff: a.water_temp_diff ?? 0,
-    wind: a.wind_speed ?? '—', windDiff: a.wind_speed_diff ?? 0,
-  };
+// 예측 응답들로 KPI 2×2 구성 (mock kpis[role] 대체)
+function kpisFromApi(role, preds, region, capacityTon) {
+  const [prev, cur, next] = preds;
+  const wow = (a, b) => (a && b && b.value ? ((a.value - b.value) / b.value) * 100 : null);
+  if (role === 'fisher') {
+    const np = next?.predicted_price, w = wow(cur?.predicted_price, prev?.predicted_price);
+    return [
+      { label: '다음 주 예상 가격', value: np ? toWon(np.value) : '—', badge: '위판가',
+        sub: np ? `신뢰 ${Math.round(np.lower_bound).toLocaleString()}~${Math.round(np.upper_bound).toLocaleString()}` : '다음 주 예측 없음' },
+      { label: '전주 대비', value: w == null ? '—' : `${w >= 0 ? '+' : ''}${w.toFixed(1)}%`,
+        valueKind: w == null ? undefined : (w >= 0 ? 'ok' : 'danger'),
+        sub: w == null ? '비교 데이터 없음' : (w > 0 ? '상승 추세' : w < 0 ? '하락 추세' : '보합') },
+      { label: '이번 주 물량', value: cur?.scenario.volume_level ?? '—', sub: cur ? `가격 ${cur.scenario.price_level}` : '' },
+      { label: `${region?.name ?? ''} 평균 단가`, value: region?.price != null ? `${region.price.toLocaleString()}원/kg` : '—', sub: '2023~2025' },
+    ];
+  }
+  const nc = next?.predicted_catch, w = wow(cur?.predicted_catch, prev?.predicted_catch);
+  return [
+    { label: '다음 주 예측 어획량', value: nc ? toTon(nc.value) : '—', subOk: w != null && w >= 0,
+      sub: w == null ? (nc ? `${toTon(nc.lower_bound)}~${toTon(nc.upper_bound)}` : '다음 주 예측 없음') : `전주 대비 ${w >= 0 ? '+' : ''}${Math.round(w)}%` },
+    { label: '신뢰구간', value: nc ? `${toTon(nc.lower_bound)}~${toTon(nc.upper_bound)}` : '—', sub: '90% 신뢰수준' },
+    { label: '창고 용량', value: `${capacityTon}톤`, sub: '설정에서 변경' },
+    { label: `${region?.name ?? ''} 물량 비중`, value: region?.share != null ? `${region.share}%` : '—', sub: '금액 기준' },
+  ];
 }
-// API는 상태 문구를 안 주므로 수온·풍속에서 간단히 도출
-function weatherStatus(a) {
-  if (a.wind_speed != null && a.wind_speed >= 9) return { text: '강풍 주의', kind: 'warn' };
-  if (a.water_temp != null && a.water_temp >= 27) return { text: '고수온 주의', kind: 'warn' };
-  return { text: '조업 양호', kind: 'ok' };
+
+// 예측 응답의 scenario로 추천 카드 구성 (확실/불확실·MAE는 예측의 uncertain/mae에서)
+function scnCardFromApi(role, pred) {
+  const sc = pred.scenario;
+  const vb = role === 'fisher' ? pred.predicted_price : pred.predicted_catch;
+  const cert = vb.uncertain ? { text: '불확실', kind: 'warn' } : { text: '확실', kind: 'ok' };
+  const maeStr = role === 'fisher' ? `±${Math.round(vb.mae).toLocaleString()}원` : `±${(vb.mae / 1000).toFixed(1)}톤`;
+  const kind = sc.price_level === '하락' ? 'danger' : sc.price_level === '상승' ? 'ok' : 'neutral';
+  const title = role === 'fisher' ? '판매 타이밍 추천' : '재고 배치 추천';
+  return `
+    <div class="card scn-card scn-card--${kind}">
+      <div class="scn">
+        <div class="scn__head"><span class="scn__title">${title}</span>${badge(sc.price_level || sc.scenario_type, kind)}</div>
+        <div class="scn__cond">${badge('물량 ' + sc.volume_level, 'outline')} <span>×</span> ${badge('가격 ' + sc.price_level, 'outline')}</div>
+        <div class="conf">
+          <div class="conf__row"><span class="conf__label">예측 신뢰도</span>${badge(cert.text, cert.kind)}</div>
+          <div class="conf__row"><span class="conf__mae">MAE ${maeStr}</span></div>
+        </div>
+        <div class="scn__divider"></div>
+        <div class="scn__headline">${sc.headline || ''}</div>
+        <div class="scn__desc">${sc.text || ''}</div>
+      </div>
+    </div>`;
 }
 
 // mock으로 먼저 그린 화면을, API가 살아있으면 실제 예측/날씨로 덮어쓴다.
@@ -54,8 +89,8 @@ async function upgradeHome(root, token, role, isFisher, mockPoints) {
     if (!g) return;
     const s0 = weatherStatus(ws[0]), s1 = weatherStatus(ws[1]);
     g.innerHTML =
-      weatherCardCompact(mapWeather(ws[0]), { label: '이번 주', statusText: s0.text, statusKind: s0.kind, active: true }) +
-      weatherCardCompact(mapWeather(ws[1]), { label: '다음 주', statusText: s1.text, statusKind: s1.kind });
+      weatherCardCompact(weatherToCard(ws[0]), { label: '이번 주', statusText: s0.text, statusKind: s0.kind, active: true }) +
+      weatherCardCompact(weatherToCard(ws[1]), { label: '다음 주', statusText: s1.text, statusKind: s1.kind });
   }).catch(() => {});
 
   // 4주 예측 → 차트 교체. 배포 예측이 있는 주만 실제값, 나머지는 mock 포인트 유지.
@@ -80,6 +115,16 @@ async function upgradeHome(root, token, role, isFisher, mockPoints) {
   });
   const el = root.querySelector('#predChart');
   if (el) el.innerHTML = predictionChart(points, { fmt });
+
+  // KPI 2×2 교체 (전주/이번주/다음주 예측 + 지역 통계 기반)
+  const region = regionsSync().find((r) => r.name === s.region) || null;
+  const kpiEl = root.querySelector('#kpiSlot');
+  if (kpiEl) kpiEl.innerHTML = kpiGrid(kpisFromApi(role, preds, region, capacityTon));
+
+  // 추천 시나리오 카드 교체 (이번주 예측 기준, 없으면 가장 가까운 것)
+  const curPred = preds[1] || preds[2] || preds.find(Boolean);
+  const scnEl = root.querySelector('#scnCard');
+  if (curPred && scnEl) scnEl.innerHTML = scnCardFromApi(role, curPred);
 }
 
 /* ============================ 05 / 06 물류·어업인 홈 ============================ */
@@ -167,7 +212,7 @@ export function renderRoleHome(role) {
         </div>
         <div id="predChart">${predictionChart(predSeries.points, { fmt: predSeries.fmt })}</div>
 
-        ${kpiGrid(kpis[role])}
+        <div id="kpiSlot">${kpiGrid(kpis[role])}</div>
 
         <div class="section-title">추천</div>
         ${scnToggle}
